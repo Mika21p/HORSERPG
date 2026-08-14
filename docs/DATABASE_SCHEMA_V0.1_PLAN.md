@@ -1,0 +1,200 @@
+# HorseRPG v0.1 数据库设计草案
+
+> 状态：设计草案。本文定义建议的数据边界、关系和一致性要求；**不包含 migration SQL，不创建任何表，也不修改 Supabase 数据库。** 业务规则以 [PRODUCT_SPEC_V0.1.md](PRODUCT_SPEC_V0.1.md) 为准。
+
+## 1. 设计原则
+
+1. **GM 为最终裁判。** 将玩家请求、GM 决定、最终记录和自动结算分开保存，避免把玩家提交直接当作事实。
+2. **资金以不可变流水为准。** 金额均为 `bigint`；账户资金和可用资金应从初始资金、正式流水和当前冻结计算，不储存可被随意改写的余额。
+3. **结算必须原子且可重试。** 报价、成交、所有权分配、奖金释放等会影响资金与归属的操作，均必须经受并发和重复请求。
+4. **WP 时间与现实时间分离。** 游戏事件保存 `wp_year`、`wp_month`、`wp_week`；操作和截止时间使用 PostgreSQL `timestamptz`。不能用客户端时钟裁定拍卖。
+5. **私密数据按数据层隔离。** 庭先报价和私密评价不能因列表、聚合、Realtime payload、审计浏览或错误信息而泄漏。
+6. **事实与派生值分离。** 比赛结果、正式资金流水和当前有效报价是事实；马匹战绩、账户资金、冻结、可用资金和总资产应查询计算或由可验证的读模型计算。
+7. **历史不物理删除。** Horse 以 `DISCARDED` 表示退出；已结算事实以追加修正或状态变迁处理，保留审计轨迹。
+
+## 2. 建议实体总览
+
+```text
+auth.users ── 1:1 ── user_profiles ── PLAYER:1:1 ── owners ──< horses
+                                                              ├──< horse_factors
+                                                              ├──< race_entries ── 0..1 ── race_results ──< prize_receivables ──< prize_receivable_adjustments
+                                                              ├──< injuries
+                                                              └──< condition_records
+
+actual_races ──< race_results
+
+foal_trade_sessions ──< foal_trade_lots ── 1:1 ── horses
+       ├──< foal_trade_inquiries
+       └──< secret_bid_offers
+
+public_auction_events ──< public_auction_lots ── 1:1 ── horses
+                                      ├──< public_auction_lot_reviews
+                                      └──< public_auction_bids
+
+owners ──< financial_transactions
+owners ──< prize_receivables
+all key changes ──< audit_logs
+```
+
+箭头表示“一对多”。`auth.users` 是 Supabase Auth 的既有身份来源；其余为将来应用 schema 中的建议表，而非本阶段要创建的表。
+
+## 3. 建议表与职责
+
+### 3.1 身份、权限与公开归属
+
+| 表 | 职责与建议存储 | 关系 | PLAYER RLS |
+| --- | --- | --- | --- |
+| `user_profiles` | 以 `auth.users.id` 为主键；角色枚举 `PLAYER`/`GM`，可包含显示名、创建/更新时间和可空 `owner_id`。 | `PLAYER` 必须关联恰好一个 Owner；`GM` 不关联 Owner。 | 玩家仅可读自己的资料；角色授予和变更仅 GM/server。 |
+| `owners` | Owner 的公开名称、`initial_funds bigint`、时间戳。 | 一个 Owner 可以暂时没有 PLAYER，v0.1 最多关联一个 PLAYER；拥有多匹 Horse、多笔财务事实。 | 所有人可读公开字段与公开资金汇总；资金初始化/调整仅 GM/server。 |
+
+Owner 与 PLAYER 身份分开：Owner 是游戏内经济与马匹归属主体，玩家账号是操作主体。数据约束必须保证 `PLAYER` 有且只有一个 `owner_id`，一个 Owner 最多对应一个 PLAYER；Owner 没有 PLAYER 合法。骑手、调教师和外部血统名称均保持文本字段，v0.1 不建立相应主数据表。
+
+### 3.2 马匹与血统
+
+| 表 | 职责与建议存储 | 关系 | PLAYER RLS |
+| --- | --- | --- | --- |
+| `horses` | 内部 `id`、永久唯一 `horse_number`、`birth_year`、`foal_name`、可空正式名、性别、毛色、父/父系/母父名称、可空 `owner_id`、当前主战骑手名、当前调教师名、`life_stage`、时间戳。 | 多对一 Owner；一对多因子、报名、伤病等。 | 全员可读。写入仅 GM/server；Owner 通过获马流程取得所有权，不直接更新 `owner_id`。 |
+| `horse_factors` | `horse_id`、因子类型 `SIRE`/`MARE`、因子值/名称、排序或时间戳。 | 多对一 Horse。 | 全员可读；仅 GM/server 写。每马每类型至多两条。 |
+
+主战骑手和调教师以 Horse 当前字段保存，符合 v0.1 不保留历史的规则。`owner_id` 一经由结算流程填入不应转让或清空；数据库约束/受控函数应阻止普通更新。名称是否需要规范化为骑手、调教师、血统名独立表，当前规则尚不足以要求。
+
+### 3.3 庭先取引
+
+| 表 | 职责与建议存储 | 关系 | PLAYER RLS |
+| --- | --- | --- | --- |
+| `foal_trade_sessions` | 届次、相关 WP 年、服务器现实开始/截止时间、状态（草案/开放/锁定/核对中/已结算等）。 | 一对多交易 Lot、询问、报价。 | 可公开读取届次及公开阶段信息；状态推进仅 GM/server。 |
+| `foal_trade_lots` | `session_id`、`horse_id`、最低报价、Lot/展示信息、交易处理状态。 | 每个 Horse 只可有一个庭先 Lot，且该 Session 的 WP 年必须等于 Horse `birth_year`；被询问和报价引用。 | 公开可读；仅 GM/server 写。 |
+| `foal_trade_inquiries` | `session_id`、`owner_id`、`horse_id`、GM 私密评价、提交/回复时间和状态。 | 每届 Owner 最多一条。 | 仅所属 Owner 与 GM 可读；创建、回复、修改须受控。唯一约束应为 `(session_id, owner_id)`。 |
+| `secret_bid_offers` | `session_id`、`lot_id`、`owner_id`、金额、当前状态、当前报价形成现实时间、撤回/取代关联、时间戳。可保留被取代或撤回版本以形成完整历史。 | 一位 Owner 对一 Lot 最多一笔当前有效报价。 | 仅所属 Owner 与 GM 可读；创建/修改/撤回仅 Owner 的受控 server 操作，结算仅 GM/server。 |
+| `foal_trade_settlements` | 最终获胜报价、获胜 Owner、成交金额、GM 确认者/时间、结果状态与备注。 | 每个 Lot 至多一个最终结算。 | 结果的公开范围依产品定义；写入仅 GM/server。 |
+
+`secret_bid_offers` 的当前有效记录需要支持“修改后重新形成同价优先时间”，因此不应只覆盖金额而丢失形成时间。可采用追加版本并标记当前有效版本，或保留单行并同步写审计；前者更利于追溯。数据库需使用部分唯一约束或等价约束确保同 Owner、同 Lot 只有一个当前有效报价。
+
+一匹幼驹仅参加出生批次的一届庭先取引。庭先未成交的 Horse 只能进入同一 WP 年的年末公开拍卖；公开拍卖未成交后设为 `DISCARDED`，不可再次进入庭先或公开拍卖。`foal_trade_lots.horse_id` 与 `public_auction_lots.horse_id` 都应各自全局唯一；进入公开拍卖的资格和年份一致性应由受控 server-side 操作验证。
+
+### 3.4 年末公开拍卖
+
+| 表 | 职责与建议存储 | 关系 | PLAYER RLS |
+| --- | --- | --- | --- |
+| `public_auction_events` | 年度/届次、状态、当前 Lot 引用及时间戳。 | 一对多公开拍卖 Lot。 | 全员可读；仅 GM/server 推进。 |
+| `public_auction_lots` | `event_id`、`horse_id`、Lot 编号、起拍价、评价价值、展示/开始/`close_at`/关闭时间、状态、最终结果。 | 每个 Lot 多笔评分、竞价，至多一笔最终成交。 | 全员可读；创建、展示、开始、关闭、确认仅 GM/server。 |
+| `public_auction_lot_reviews` | `lot_id`、`slot`（1–5）、`stars`（1–5）、`comment`、时间戳。 | 每个 Lot 恰好五条评分，分别对应 slot 1–5。 | 全员可读；仅 GM/server 写。 |
+| `public_auction_bids` | `lot_id`、`owner_id`、金额、服务器接收时间、接受/拒绝原因或状态。 | 多对一 Lot 和 Owner；追加式竞价历史。 | 已接受的公开竞价信息按产品公开范围读取；写入只允许 Owner 经受控 server 操作。 |
+| `public_auction_settlements` | 成交 Owner/金额或流拍、GM 确认者/时间、备注和结算状态。 | 每个 Lot 至多一个。 | 公开结果可读；写入仅 GM/server。 |
+
+评分和评语正式使用 `public_auction_lot_reviews`，不存入 Lot 的固定列。该表要求 `UNIQUE(lot_id, slot)`，并约束 `slot`、`stars` 都在 1–5 范围内。Lot 在展示或开始竞价前必须具备 slot 1–5 五条评分；这一“恰好五条”的跨行条件需由受控操作或等价数据库完整性机制保证。
+
+拍卖运行中可将当前最高价/Owner 放在 Lot 的受控状态字段作高效公开读取，但权威竞价历史仍是 `public_auction_bids`。每次合法报价在同一数据库事务内校验并更新 `close_at` 为服务器当前时间加 10 秒。不得依赖客户端或 Realtime 写入该状态。
+
+### 3.5 比赛报名、赛果、状态记录
+
+| 表 | 职责与建议存储 | 关系 | PLAYER RLS |
+| --- | --- | --- | --- |
+| `fixed_race_catalog` | OP/G3/G2/G1 固定比赛名、WP 月/周、级别和待确认的其他必要资料。 | 可被报名意图与实际比赛引用。 | 全员可读；仅 GM/server 维护。 |
+| `race_entries` | Horse、提出 Owner/操作者、WP 年月周、固定比赛引用或比赛类别、希望骑手、跑法、备注、状态、GM 决定/修改内容和时间。也用于记录 GM 创建的出道战。 | 多对一 Horse；表达报名意图，可有零或一条最终赛果。 | 玩家可读公开报名，并只对自己 Owner 的 Horse 创建/撤回未执行意图；GM 可全读写。 |
+| `actual_races` | GM 最终确认的实际 WP 比赛；保存 WP 年月周、实际比赛标识/描述、可空固定比赛库引用、GM 确认信息与时间。 | 一场实际比赛可关联多条 `race_results`。 | 全员可读；仅 GM/server 写或修正。 |
+| `race_results` | `actual_race_id`、对应 Horse、可空来源 `race_entry_id`、名次、`wp_prize_money bigint`、实际骑手、实际跑法、备注、GM 确认信息。 | 多对一 `actual_races`；来源报名至多产生一个结果；一对零或一条基础奖金应收。 | 全员可读；仅 GM/server 写或受控修正。 |
+| `injuries` | Horse、是否伤病、WP 开始/结束年/月/周、备注、GM 确认信息。 | 多对一 Horse。 | 全员可读；仅 GM/server 写。伤病结束 WP 周按包含处理，从下一 WP 周起可报名。 |
+| `condition_records` | Horse、相关 WP 时间、GM 最终体力/投骰/结算记录和备注。 | 多对一 Horse。 | 全员可读；仅 GM/server 写。它只记录 GM 裁定，不作为系统自动推导正确体力或伤病结论的依据。 |
+
+`race_entries` 需要能表达玩家提交、GM 修改确认、拒绝、撤回与 GM 代建。对同一 Horse、同一 WP 周的有效/已确认报名应施加唯一性保护；具体哪些状态占用该周需在实现前明确。伤病冲突和特殊跑法规则应在 server-side 检查，GM 保留覆盖裁定能力及审计。
+
+`actual_races` 是最终执行事实，`race_entries` 不是实际比赛；同一 `actual_race` 可由多匹玩家 Horse 的多条 `race_results` 共享。每条赛果必须指向一个实际比赛；同一 Horse 在同一实际比赛至多一条赛果。赛果如有来源报名，则同一 `race_entry` 至多一条赛果。
+
+### 3.6 财务、奖金与退役
+
+| 表 | 职责与建议存储 | 关系 | PLAYER RLS |
+| --- | --- | --- | --- |
+| `financial_transactions` | Owner、`amount bigint`（正负）、交易类别、有效现实时间、来源对象/结算引用、GM/系统操作者、备注、时间戳。仅记录真正入账或扣款的事实。 | 多对一 Owner；可由拍卖、庭先、奖金释放或修正产生。 | 逐笔公开范围未定；仅 GM/server 追加，禁止普通 UPDATE/DELETE。 |
+| `prize_receivables` | Horse、Owner、来源赛果、`amount bigint`（GM 最终确认值）、`PENDING`/`RELEASED`、生成/释放时间、释放流水引用。 | 多对一 Horse/Owner；一条基础应收对应一条赛果。 | 全员可读；创建、释放、受控调整仅 GM/server。 |
+| `prize_receivable_adjustments` | 原始应收、GM 确认的调整金额、调整原因、关联赛果修正、处理状态、释放/修正流水引用和时间戳。 | 多对一基础应收；用于已生成或已释放奖金后的受控调整。 | 全员可读；仅 GM/server 追加。 |
+| `retirement_cases` | Horse、申请 Owner、申请时 WP 时间、申请/强制退役原因、GM 确认者与时间、状态、最终奖金释放批次/幂等键、备注。 | 一 Horse 至多一个已确认退役结算。 | Owner 可查看/提交自身马匹的申请；GM 全读写；结算仅 GM/server。 |
+
+`prize_receivables.amount` 是 GM 输入/确认的最终基础金额，而不是由数据库公式自动计算的结果。未来辅助计算只能提供建议。赛果在应收生成后被更正时，不得再次生成基础应收：未释放部分通过受控 `prize_receivable_adjustments` 调整有效待释放额；已释放部分通过关联调整记录的追加 `financial_transactions` 修正。两种路径都必须审计且可幂等重试。
+
+冻结资金不是 `financial_transactions`。它应从当前有效秘密报价与当前公开拍卖最高有效报价计算，或保存在严格受控、可从报价重建的投影中。账户资金、可用资金、待释放奖金、总资产同样应动态计算，避免双写余额。正常 PLAYER 业务操作必须拒绝会使账户资金或可用资金为负的请求；金额使用 `bigint` 整数游戏资金单位。
+
+### 3.7 审计
+
+| 表 | 职责与建议存储 | 关系 | PLAYER RLS |
+| --- | --- | --- | --- |
+| `audit_logs` | 操作者账号/角色、现实时间、动作类型、实体类型/ID、可追溯前后内容或引用、原因/备注、关联请求/事务 ID。 | 可引用所有关键实体。 | GM 可读全部；玩家不得藉由审计读取私有报价/评价。写入由 server/数据库触发机制控制。 |
+
+必须记录的范围：资金、赛果、WP 赏金、拍卖结果、庭先成交、伤病、退役、奖金释放和其他已结算的重要数据。由于日志本身可能包含秘密报价，RLS/视图必须按源数据敏感级别拆分，不能默认对玩家公开。
+
+## 4. 实际存储与动态计算
+
+| 实际存储的事实 | 应动态计算或由可验证读模型产生 |
+| --- | --- |
+| Horse 基础资料、当前阶段、当前 Owner、文本形式的骑手/调教师/血统名称、血统因子 | Horse 战绩：出赛次数、胜/亚/季、G1 胜、总 WP 赏金、主要胜鞍 |
+| WP 时间字段、现实时间戳、GM 决定与备注 | 账户资金 = 初始资金 + 正式流水合计 |
+| 庭先 Lot/询问/报价的当前状态及历史、最终成交 | 当前冻结 = 当前有效秘密报价 + 当前公开拍卖最高有效报价 |
+| 公开拍卖 Lot、五条独立评分、追加式竞价、`close_at`、最终成交/流拍 | 可用资金 = 账户资金 − 当前冻结 |
+| 报名意图、实际比赛、赛果、伤病、GM 最终体力记录 | 待释放奖金 = 基础 `PENDING` 应收款与未处理调整的有效金额合计；总资产 = 账户资金 + 待释放奖金 |
+| Prize Receivable、奖金调整、正式 Financial Transaction、退役结算状态 | 是否达到 G1 九胜等可从确认赛果计算的提示条件 |
+| 审计日志 | |
+
+如需性能优化，可以添加只读物化视图或受控投影；它们必须可从上述事实重建，且不能成为 GM 任意直接修改的另一份真相。
+
+## 5. RLS 与执行边界
+
+### PLAYER 数据访问
+
+PLAYER 必须绑定 Owner，且可读全部 Horse、Owner、比赛、公开拍卖状态、奖金应收和 Owner 公开资金汇总；可读写自身 Owner 的尚未处理意图（如报名、庭先询问、秘密报价的受控操作）。除庭先秘密报价和庭先私密 GM 评价外，v0.1 不设置玩家之间的 Owner 数据隔离。
+
+庭先 `secret_bid_offers` 与 `foal_trade_inquiries` 必须按 `owner_id` 严格隔离，GM 例外。列表计数、聚合、报错、审计、Realtime channel 和关联查询都必须遵循相同隔离，避免旁路泄漏。公开资金汇总不得包含或可反推出当前秘密报价、秘密报价冻结或可用资金；逐笔 `financial_transactions` 的公开范围仍待产品确认。
+
+### GM 与 server-side 操作
+
+GM 可访问并修正全部业务数据，但涉及结算的写入不应由客户端直接修改基础表。以下至少必须在 server-side 或受控数据库函数/事务中执行，并验证操作者 GM 权限：
+
+- 创建/锁定/核对/确认庭先交易，分配所有权和扣款；
+- 展示、开始、关闭、确认或流拍公开 Lot；
+- 赛果、WP 赏金、伤病、退役和奖金应收的 GM 确认/修正；
+- 任何正式资金流水、资金修正和奖金释放；
+- 角色授予、初始资金变更和 Horse 所有权变更；
+- 写入或维护审计记录。
+
+普通 PLAYER 客户端不应持有可绕过上述边界的权限或密钥。
+
+## 6. 事务、并发和幂等要求
+
+| 操作 | 为什么需要事务/锁 | 幂等要求 |
+| --- | --- | --- |
+| 创建、修改、撤回庭先报价 | 同时校验截止、同 Lot 当前报价唯一性、Owner 全部冻结和可用资金，拒绝导致可用资金为负的请求，防止并发超额冻结。 | 请求应有幂等键；重复提交不得产生重复有效报价或改变同价优先时间。 |
+| 庭先 GM 确认成交 | 选出最高有效报价（同价按当前形成时间）、锁定 Lot、扣款、分配 Horse Owner、写流水与审计必须原子完成。 | 每 Lot 至多一次最终结算；重试返回同一结算结果。 |
+| 公开拍卖报价 | 锁定当前 Lot，使用数据库服务器时间判断 `close_at`，校验金额/资金及冻结后可用资金非负，写报价，更新最高价及 `close_at`。 | 同一请求重试不得多次延长倒计时或产生重复竞价。 |
+| 公开拍卖 GM 确认 | 锁定 Lot，验证已关闭，成交时写扣款、Owner、流水、审计；流拍时更新 Horse 为 `DISCARDED`。 | 每 Lot 至多一个最终结果；不允许重复扣款或重复转归属。 |
+| 比赛报名及 GM 确认 | 校验 Horse、伤病与同 Horse 同 WP 周冲突；GM 修改要保留决定记录。 | 重复请求不得产生两笔占用同一周的有效报名。 |
+| 赛果、GM 确认奖金与应收款 | GM 确认金额、赛果与基础应收创建要原子化并防止重复；后续赛果更正通过受控调整，不重建基础应收。 | 每个来源赛果的基础应收应有唯一来源约束或幂等键；每项调整亦需唯一来源/幂等键。 |
+| 退役与奖金释放 | 锁定 Horse/退役案，找到其全部有效 `PENDING` 应收和调整，生成对应正式流水，标记已释放，记录审计。 | 重试不得使任一基础应收或调整二次释放或写入重复流水。 |
+| 财务修正 | 追加修正流水与审计，而非改历史余额。 | 修正来源或幂等键应防止重复记账。 |
+
+账户可用资金检查必须与冻结变化在同一数据库事务内完成，并对同一 Owner 的竞争操作串行化或施加等价锁定。只在应用层先查询余额再写入，无法保证报价并发时不超额冻结。
+
+## 7. 建议的完整性约束
+
+- `horses.horse_number` 永久唯一；Horse 不物理删除。
+- `horse_factors`：同一 `horse_id`、同一类型最多两条。
+- `user_profiles` 角色只允许 `PLAYER` 或 `GM`；`PLAYER` 必须绑定一个 Owner，`GM` 不绑定 Owner；一个 Owner 最多一个 PLAYER 绑定。
+- 一匹 Horse 的 `foal_trade_lots` 全局至多一条，且其 Session 年份等于 `birth_year`；一匹 Horse 的 `public_auction_lots` 全局至多一条，且只允许庭先未成交的同出生年 Horse 进入。
+- `foal_trade_inquiries`：同一 `session_id`、`owner_id` 只能一条。
+- 当前有效秘密报价：同一 `owner_id`、`lot_id` 只能一条；锁定后不得由玩家修改。
+- 每个公开拍卖事件的同时进行 Lot 至多一个；每个 Lot 至多一个最终结算。
+- `public_auction_lot_reviews`：`UNIQUE(lot_id, slot)`；`slot` 和 `stars` 均为 1–5；Lot 展示或开拍前恰好具备五个 slot。
+- `public_auction_lots.close_at` 和合法报价接收时间必须由数据库服务器产生/校验。
+- 同一 Horse、同一 WP 年月周的有效比赛报名至多一笔；是否包含已撤回/拒绝状态应在实现前确认。
+- 每条 `race_result` 必须归属一场 `actual_race`；同一 Horse 在同一实际比赛至多一条赛果；有来源报名时一条报名至多一条赛果。
+- 同一来源赛果不得重复生成基础 `prize_receivable`；奖金调整必须引用其基础应收；已释放基础应收或调整均须有且只有一次对应正式流水或修正流水。
+- Horse 已拥有 Owner 后，不允许常规所有权转让；成交结算与退役奖金释放必须使用受控操作。
+
+## Open Questions
+
+以下问题仍会改变约束、RLS、显示或事务细节，需在相应 migration/功能实施前由产品方确认：
+
+1. 庭先最低报价、公开拍卖起拍价与最小加价单位的精确合法性；公开拍卖是否允许撤回、最高价 Owner 再次出价，以及 GM 能否改价或重开已关闭 Lot。
+2. 公开资金汇总的确切字段（在不得反推秘密报价/冻结的前提下），以及逐笔 `financial_transactions` 是否公开、向谁公开。
+3. `initial_funds` 的设定与变更流程，以及经 GM 审计的纠错是否允许使账户资金为负；常规 PLAYER 操作已确定不得导致负数。
+4. 固定比赛库的完整字段、`actual_races` 的标准实际比赛标识，以及未胜利战/条件赛在 GM 回填前后能否变更报名 WP 周或类别。
+5. “主要胜鞍”、特殊跑法、满 3 岁、寿命过低与 G1 九胜触发后的精确判定和系统动作。
+6. 生命周期允许的完整跳转集合，特别是 `RETIRED → BREEDING` 是否必经，以及除公开拍卖流拍外哪些情况可以进入 `DISCARDED`。
