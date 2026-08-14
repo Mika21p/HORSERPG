@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "bootstrap:gm": "node --env-file=.env.local scripts/bootstrap-gm.mjs",
+    "test:service-role": "node --env-file=.env.local scripts/test-service-role-user-profiles.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

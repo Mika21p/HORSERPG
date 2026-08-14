@@ -17,3 +17,17 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+@layer components {
+  .admin-label {
+    @apply block text-sm text-stone-300;
+  }
+
+  .admin-input {
+    @apply mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2.5 text-stone-100 outline-none placeholder:text-stone-600 focus:border-amber-300;
+  }
+
+  .admin-button {
+    @apply inline-flex items-center justify-center rounded-lg bg-amber-300 px-4 py-2.5 text-sm font-semibold text-stone-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+}
