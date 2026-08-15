@@ -23,6 +23,9 @@ export function AppShell({ children, email, isGM }: AppShellProps) {
             <Link className="hover:text-amber-200" href="/horses">
               Horses
             </Link>
+            <Link className="hover:text-amber-200" href="/foal-trade">
+              庭先取引
+            </Link>
             {isGM && (
               <Link className="hover:text-amber-200" href="/admin">
                 GM 后台

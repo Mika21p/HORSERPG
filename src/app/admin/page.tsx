@@ -5,6 +5,7 @@ const links = [
   ["Horses", "/admin/horses", "创建与维护 Horse 及 Horse Factors"],
   ["Users", "/admin/users", "创建 PLAYER 并绑定空闲 Owner"],
   ["Game State", "/admin/game-state", "设置当前 Winning Post 时间"],
+  ["庭先取引", "/admin/foal-trade", "管理庭先届次、Lot、询问、秘密报价与结算"],
 ] as const;
 
 export default function AdminHomePage() {

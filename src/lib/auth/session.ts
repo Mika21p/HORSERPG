@@ -46,6 +46,19 @@ export async function requireUser() {
   return session as typeof session & { user: NonNullable<typeof session.user> };
 }
 
+/** Server-side authorization for PLAYER-only actions and private projections. */
+export async function requirePlayer() {
+  const session = await requireUser();
+
+  if (session.profile?.role !== "PLAYER" || !session.profile.owner_id) {
+    redirect("/");
+  }
+
+  return session as typeof session & {
+    profile: CurrentProfile & { role: "PLAYER"; owner_id: string };
+  };
+}
+
 /** Server-side authorization for pages and every privileged Server Action. */
 export async function requireGM() {
   const session = await requireUser();
