@@ -63,14 +63,16 @@ Owner 与 PLAYER 身份分开：Owner 是游戏内经济与马匹归属主体，
 | 表 | 职责与建议存储 | 关系 | PLAYER RLS |
 | --- | --- | --- | --- |
 | `foal_trade_sessions` | 届次、相关 WP 年、服务器现实开始/截止时间、状态（草案/开放/锁定/核对中/已结算等）。 | 一对多交易 Lot、询问、报价。 | 可公开读取届次及公开阶段信息；状态推进仅 GM/server。 |
-| `foal_trade_lots` | `session_id`、`horse_id`、最低报价、Lot/展示信息、交易处理状态。 | 每个 Horse 只可有一个庭先 Lot，且该 Session 的 WP 年必须等于 Horse `birth_year`；被询问和报价引用。 | 公开可读；仅 GM/server 写。 |
+| `foal_trade_lots` | `session_id`、`horse_id`、最低报价（`bigint`，可为 0）、Lot/展示信息、交易处理状态。 | 每个 Horse 只可有一个庭先 Lot，且该 Session 的 WP 年必须等于 Horse `birth_year`；被询问和报价引用。 | 公开可读；仅 GM/server 写。 |
 | `foal_trade_inquiries` | `session_id`、`owner_id`、`horse_id`、GM 私密评价、提交/回复时间和状态。 | 每届 Owner 最多一条。 | 仅所属 Owner 与 GM 可读；创建、回复、修改须受控。唯一约束应为 `(session_id, owner_id)`。 |
-| `secret_bid_offers` | `session_id`、`lot_id`、`owner_id`、金额、当前状态、当前报价形成现实时间、撤回/取代关联、时间戳。可保留被取代或撤回版本以形成完整历史。 | 一位 Owner 对一 Lot 最多一笔当前有效报价。 | 仅所属 Owner 与 GM 可读；创建/修改/撤回仅 Owner 的受控 server 操作，结算仅 GM/server。 |
-| `foal_trade_settlements` | 最终获胜报价、获胜 Owner、成交金额、GM 确认者/时间、结果状态与备注。 | 每个 Lot 至多一个最终结算。 | 结果的公开范围依产品定义；写入仅 GM/server。 |
+| `secret_bid_offers` | `session_id`、`lot_id`、`owner_id`、金额、当前状态、当前报价形成现实时间、撤回/取代关联、时间戳。当前报价可配合独立的不可变历史表保存每次变更。 | 一位 Owner 对一 Lot 最多一笔当前有效报价。 | 报价阶段仅所属 Owner 与 GM 可读；创建/修改/撤回仅 Owner 的受控 server 操作，结算仅 GM/server。失败报价及其历史永久私密。 |
+| `foal_trade_settlements` | 系统推荐报价、最终选择报价、获胜 Owner、成交金额、是否 override、非空 override 原因、GM 确认者/时间、结果状态与备注。 | 每个 Lot 至多一个最终结算。 | 仅安全公开投影向所有 PLAYER 展示最终 Owner 与最终成交价格；内部报价引用、override 原因和 GM 备注仅 GM 可读；写入仅 GM/server。 |
 
-`secret_bid_offers` 的当前有效记录需要支持“修改后重新形成同价优先时间”，因此不应只覆盖金额而丢失形成时间。可采用追加版本并标记当前有效版本，或保留单行并同步写审计；前者更利于追溯。数据库需使用部分唯一约束或等价约束确保同 Owner、同 Lot 只有一个当前有效报价。
+`secret_bid_offers` 的当前有效记录需要支持“修改后重新形成同价优先时间”，因此不应只覆盖金额而丢失形成时间。可采用当前单行报价配合不可变历史，或追加版本并标记当前有效版本；两者都必须保留每次变更。数据库需确保同 Owner、同 Lot 只有一个当前有效报价。报价阶段完全秘密；GM 确认后只可通过安全投影公开最终 Owner 与成交价格，不能以结算记录、计数、关联查询、Realtime 或错误信息泄漏任何失败报价。
 
 一匹幼驹仅参加出生批次的一届庭先取引。庭先未成交的 Horse 只能进入同一 WP 年的年末公开拍卖；公开拍卖未成交后设为 `DISCARDED`，不可再次进入庭先或公开拍卖。`foal_trade_lots.horse_id` 与 `public_auction_lots.horse_id` 都应各自全局唯一；进入公开拍卖的资格和年份一致性应由受控 server-side 操作验证。
+
+当前 `horses_prevent_foal_trade_lot_direct_assignment` 会阻止已经参加庭先的未成交 Horse 通过普通路径完成 `NULL → Owner`。未来公开拍卖模块必须以新的受控结算 guard/RPC 扩展此保护，使庭先 Settlement 与同年年末公开拍卖 Settlement 都能合法完成首次归属；不得为了提前支持拍卖而放宽当前普通 Horse 更新保护。
 
 ### 3.4 年末公开拍卖
 
@@ -142,7 +144,7 @@ Owner 与 PLAYER 身份分开：Owner 是游戏内经济与马匹归属主体，
 
 PLAYER 必须绑定 Owner，且可读全部 Horse、Owner、比赛、公开拍卖状态、奖金应收和 Owner 公开资金汇总；可读写自身 Owner 的尚未处理意图（如报名、庭先询问、秘密报价的受控操作）。除庭先秘密报价和庭先私密 GM 评价外，v0.1 不设置玩家之间的 Owner 数据隔离。
 
-庭先 `secret_bid_offers` 与 `foal_trade_inquiries` 必须按 `owner_id` 严格隔离，GM 例外。列表计数、聚合、报错、审计、Realtime channel 和关联查询都必须遵循相同隔离，避免旁路泄漏。公开资金汇总不得包含或可反推出当前秘密报价、秘密报价冻结或可用资金；逐笔 `financial_transactions` 的公开范围仍待产品确认。
+庭先 `secret_bid_offers`、其历史与 `foal_trade_inquiries` 必须按 `owner_id` 严格隔离，GM 例外。报价阶段完全秘密：列表计数、聚合、报错、审计、Realtime channel 和关联查询都必须遵循相同隔离，避免旁路泄漏。GM 确认结算后，所有 PLAYER 仅可通过安全公开投影读取最终成交 Owner 与最终成交价格；失败报价、报价历史、推荐与 override 内部资料继续隔离。公开资金汇总不得包含或可反推出当前秘密报价、秘密报价冻结或可用资金；逐笔 `financial_transactions` 的公开范围仍待产品确认。
 
 ### GM 与 server-side 操作
 
@@ -162,7 +164,7 @@ GM 可访问并修正全部业务数据，但涉及结算的写入不应由客�
 | 操作 | 为什么需要事务/锁 | 幂等要求 |
 | --- | --- | --- |
 | 创建、修改、撤回庭先报价 | 同时校验截止、同 Lot 当前报价唯一性、Owner 全部冻结和可用资金，拒绝导致可用资金为负的请求，防止并发超额冻结。 | 请求应有幂等键；重复提交不得产生重复有效报价或改变同价优先时间。 |
-| 庭先 GM 确认成交 | 选出最高有效报价（同价按当前形成时间）、锁定 Lot、扣款、分配 Horse Owner、写流水与审计必须原子完成。 | 每 Lot 至多一次最终结算；重试返回同一结算结果。 |
+| 庭先 GM 确认成交 | 正常路径必须选出 `amount DESC, priority_at ASC, id ASC` 的系统推荐报价；异常路径必须显式选择另一有效报价并保存非空原因、推荐与选择。两条路径都须锁定 Lot、扣款、分配 Horse Owner、写流水与审计，并原子完成。 | 每 Lot 至多一次最终结算；重试返回同一结算结果。 |
 | 公开拍卖报价 | 锁定当前 Lot，使用数据库服务器时间判断 `close_at`，校验金额/资金及冻结后可用资金非负，写报价，更新最高价及 `close_at`。 | 同一请求重试不得多次延长倒计时或产生重复竞价。 |
 | 公开拍卖 GM 确认 | 锁定 Lot，验证已关闭，成交时写扣款、Owner、流水、审计；流拍时更新 Horse 为 `DISCARDED`。 | 每 Lot 至多一个最终结果；不允许重复扣款或重复转归属。 |
 | 比赛报名及 GM 确认 | 校验 Horse、伤病与同 Horse 同 WP 周冲突；GM 修改要保留决定记录。 | 重复请求不得产生两笔占用同一周的有效报名。 |
@@ -180,7 +182,7 @@ GM 可访问并修正全部业务数据，但涉及结算的写入不应由客�
 - 一匹 Horse 的 `foal_trade_lots` 全局至多一条，且其 Session 年份等于 `birth_year`；一匹 Horse 的 `public_auction_lots` 全局至多一条，且只允许庭先未成交的同出生年 Horse 进入。
 - `foal_trade_inquiries`：同一 `session_id`、`owner_id` 只能一条。
 - 当前有效秘密报价：同一 `owner_id`、`lot_id` 只能一条；锁定后不得由玩家修改。
-- 每个公开拍卖事件的同时进行 Lot 至多一个；每个 Lot 至多一个最终结算。
+- 每个公开拍卖事件的同时进行 Lot 至多一个；每个 Lot 至多一个最终结算。庭先成交结算必须保存系统推荐报价；仅异常路径可选择不同有效报价，且必须保存非空原因和审计。
 - `public_auction_lot_reviews`：`UNIQUE(lot_id, slot)`；`slot` 和 `stars` 均为 1–5；Lot 展示或开拍前恰好具备五个 slot。
 - `public_auction_lots.close_at` 和合法报价接收时间必须由数据库服务器产生/校验。
 - 同一 Horse、同一 WP 年月周的有效比赛报名至多一笔；是否包含已撤回/拒绝状态应在实现前确认。
@@ -192,7 +194,7 @@ GM 可访问并修正全部业务数据，但涉及结算的写入不应由客�
 
 以下问题仍会改变约束、RLS、显示或事务细节，需在相应 migration/功能实施前由产品方确认：
 
-1. 庭先最低报价、公开拍卖起拍价与最小加价单位的精确合法性；公开拍卖是否允许撤回、最高价 Owner 再次出价，以及 GM 能否改价或重开已关闭 Lot。
+1. 公开拍卖起拍价与最小加价单位的精确合法性；公开拍卖是否允许撤回、最高价 Owner 再次出价，以及 GM 是否能改价或重开已关闭 Lot。
 2. 公开资金汇总的确切字段（在不得反推秘密报价/冻结的前提下），以及逐笔 `financial_transactions` 是否公开、向谁公开。
 3. `initial_funds` 的设定与变更流程，以及经 GM 审计的纠错是否允许使账户资金为负；常规 PLAYER 操作已确定不得导致负数。
 4. 固定比赛库的完整字段、`actual_races` 的标准实际比赛标识，以及未胜利战/条件赛在 GM 回填前后能否变更报名 WP 周或类别。
