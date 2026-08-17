@@ -96,7 +96,7 @@ FOAL → OWNED_FOAL → TRAINING → ACTIVE → RETIRE_PENDING → RETIRED → B
 | 概念 | 规则 |
 | --- | --- |
 | 账户资金 | `initial_funds` 加上已真正入账的 `financial_transactions`。 |
-| 拍卖冻结资金 | Owner 当前全部庭先有效秘密报价，加上公开拍卖当前有效最高报价所占用的金额。冻结不产生真实扣款流水。 |
+| 拍卖冻结资金 | Owner 当前全部庭先有效秘密报价，加上公开拍卖当前 Round 最高报价所占用的金额。公开 Round 在 `BIDDING` 或已关闭但尚未最终结算时继续冻结；被超价、作废为历史 Round 或已结算的报价不冻结。冻结不产生真实扣款流水。 |
 | 可用资金 | 账户资金减去拍卖冻结资金。有效报价的总冻结额不得超过可用账户资金。 |
 | 待释放奖金 | 比赛取得并折算完成、但因马匹尚未退役而不能使用的奖金。 |
 | 总资产 | 账户资金加待释放奖金；不计入马匹评价价值。 |
@@ -123,19 +123,32 @@ GM 可走独立的异常裁定路径，选择另一条仍有效的报价，但�
 
 ## 7. 年末公开拍卖
 
-庭先取引后仍无主的幼驹，按 `LOT 001 → LOT 002 → LOT 003 …` 逐匹进入同年年末公开拍卖。同一时刻只可拍卖一匹。公开拍卖流拍后，Horse 设置为 `DISCARDED`；不得重新进入后续庭先或公开拍卖。
+庭先取引后仍无主的幼驹，按 `LOT 001 → LOT 002 → LOT 003 …` 逐匹进入同年年末公开拍卖。同一 Event 同一时刻只可拍卖一匹。公开拍卖资格仅限：无 Owner、`FOAL`、出生年等于该 Event WP 年、且已经参加同年庭先并最终未成交的 Horse。每匹 Horse 全局至多进入一个公开拍卖 Lot。正常流拍后 Horse 设置为 `DISCARDED`，不得重新进入后续庭先或公开拍卖；Emergency Rollback 创建的是同一 Lot 的新 Round，不是新 Lot。
 
 每个 Lot 展示：幼驹名、五个评分槽与各自评语、性别、毛色、起拍价、评价价值、母父、牝马因子、父、父系统、种父因子和拍卖编号。五个评分槽固定为 slot 1–5，每个 slot 包含 1 至 5 星与一段评语，模拟五个评价来源，并不代表真实存在五名 GM。评价价值与起拍价是不同字段。
 
 ### 7.1 实时竞价与成交
 
-1. GM 展示当前 Lot 后点击开始竞价。
-2. 玩家进行公开竞价；所有玩家实时看到当前价格、当前最高报价 Owner、最近报价和倒计时。
-3. 每次服务器接受一笔合法新报价，均设置 `close_at = 服务器当前时间 + 10 秒`。
-4. 连续 10 秒没有合法新报价后，Lot 停止接受报价并进入等待 GM 确认。
-5. GM 确认成交后，扣除成交 Owner 资金、为 Horse 分配 Owner，并写入财务流水；无人报价时 GM 确认流拍。
+1. GM 先展示当前 Lot 的 Horse 资料与五份评分；展示只公开该 Lot，不启动任何期限或改变 Round。随后 GM 单独点击开始，Lot 才进入 `OPEN_WAITING`；此时不存在 10 秒倒计时，服务器设置 10 分钟无报价兜底时间。
+2. 所有报价必须是 `100000`（10 万）整数倍。第一口允许等于起拍价，且必须不低于起拍价；后续报价必须至少比当前价高一个 Event 的最低加价单位（当前固定为 10 万），允许跳价。
+3. 当前最高报价 Owner 不能再次报价；已接受 Bid 不可撤回、不可修改、不可删除。客户端每次报价必须携带其看到的当前 `round_id` 与请求幂等键；Round 已切换时服务器拒绝该过期请求。同一 Owner、同一 Round、同一幂等键只可重试同一金额，重试返回原 Bid 且不改变任何竞价事实；同键不同金额必须拒绝。
+4. 第一笔合法报价才使 Lot 进入 `BIDDING`，并以该笔最终被数据库接受的服务器 `accepted_at` 精确设置 `close_at = accepted_at + 10 秒`。每笔后续合法报价同样以其自身最终 `accepted_at` 重新设置 10 秒。
+5. 服务器时间到达 `close_at` 后不再接受报价；`OPEN_WAITING` 到达 10 分钟无报价兜底后也不再接受第一口。两种情况都只进入 `CLOSED` 等待 GM，绝不自动成交、流拍或丢弃 Horse。
+6. GM 在 `CLOSED` 后确认成交时，扣除赢家资金、为 Horse 分配 Owner、写入追加式财务流水与审计；无人报价时 GM 确认流拍。成交/流拍均幂等，不能重复扣款或重复改变 Horse。
 
-数据库服务器负责报价合法性和截单判定；Realtime 仅广播状态。当前最高报价应冻结相应资金，且冻结不是真实资金流水。年末拍卖后仍无主的 Horse 设置为 `DISCARDED`，保留完整历史记录。
+Event 状态机为：`DRAFT → OPEN → CLOSED`，`CLOSED → OPEN` 或在所有 Lot 都已 `SOLD`/`PASSED` 且不存在待确认 Emergency Rollback 时 `CLOSED → SETTLED`；同状态请求是无副作用重试。`OPEN → CLOSED` 前不得存在 `OPEN_WAITING` 或 `BIDDING` 的活跃 Lot。`SETTLED` 不允许普通状态变更。
+
+数据库服务器负责报价合法性、资金冻结和截单判定；Realtime 仅广播状态。当前 Round 最高报价应冻结相应资金，且冻结不是真实资金流水。所有已认证 PLAYER 可读取 Event，以及 GM 已展示 Lot 的资料/评分、该 Lot 当前 Round 的已接受 Bid、当前价、当前赢家、倒计时与最终结果；未展示的未来 Lot、评分、Round 与 Bid 均不可读取。匿名访问者不可读取业务数据。Emergency Rollback 后的旧 Round 与 Bid 保留为 GM/audit 历史，不作为普通公开竞价显示。
+
+### 7.2 CLOSED 普通重开
+
+尚未最终 `SOLD` 或 `PASSED` 的 `CLOSED` Lot，GM 可填写非空原因后普通重开。已有报价时恢复为 `BIDDING`，保留 Bid、当前价和赢家，并从服务器当前时间重新给 10 秒；无报价时恢复为 `OPEN_WAITING`，并重新给 10 分钟无报价期限。普通重开不得删除 Bid，也不得改变起拍价。`SOLD` 与 `PASSED` 绝不能走普通重开。
+
+### 7.3 Emergency Rollback
+
+Emergency Rollback 仅用于已经最终 `SOLD` 或 `PASSED` 的重大异常，不是普通重开。GM 必须先以非空原因创建申请；申请本身不得改动 Horse、资金、Bid 或 Settlement。随后 GM 必须输入数据库保存的严格确认文本（例如 `ROLLBACK LOT 027`）才能执行。
+
+执行 `SOLD` Rollback 时，原 Bid、Settlement 与购买扣款全部保留；系统新增同额 `PUBLIC_AUCTION_ROLLBACK` 补偿流水，将 Horse 从该 Settlement Owner 受控回退为无 Owner 的 `FOAL`，将原 Round 标为 `VOIDED`，并创建从起拍价重新开始的新 Round。执行 `PASSED` Rollback 时，Horse 从 `DISCARDED` 受控恢复为无 Owner 的 `FOAL`，同样作废旧 Round 并创建新 Round，但不产生资金补偿。若 Event 当时为 `CLOSED` 或 `SETTLED`，确认 Rollback 必须受控将其恢复为 `OPEN`、写入专门 Audit，随后新 Round 才可重新开拍。每个 Settlement 至多成功 Rollback 一次；重复确认不得二次退款、重复新建 Round 或篡改历史。申请、确认、补偿和新 Round 必须完整 Audit，且 rollback 原因不对 PLAYER 公开。
 
 ## 8. 有主幼驹、入厩与参赛
 
@@ -187,9 +200,8 @@ GM 对以下关键变更必须留下 Audit Log：资金、比赛结果、WP 赏�
 
 以下事项在当前规则中仍缺少足以直接实现校验、RLS 或用户行为的定义，需产品方确认：
 
-1. 公开拍卖起拍价与最小加价单位的精确规则；公开拍卖能否撤回、最高价 Owner 能否再次出价，以及 GM 是否能改价或重开已关闭 Lot。
-2. 公开资金汇总的确切展示字段（不得反推秘密报价/冻结），以及逐笔 `financial_transactions` 是否公开。
-3. `initial_funds` 的设定与变更方式，以及 GM 已审计纠错是否允许使账户资金为负。
-4. 固定比赛库的完整资料、`actual_races` 的标准实际比赛标识，以及未胜利战/条件赛报名在 GM 回填前后能否变更 WP 周或类别。
-5. “主要胜鞍”、特殊跑法、满 3 岁、寿命过低与 G1 九胜的精确判定和后续系统动作。
-6. 生命周期允许的完整跳转，特别是 `RETIRED → BREEDING` 是否必经，以及除公开拍卖流拍外哪些情况可以进入 `DISCARDED`。
+1. 公开资金汇总的确切对外展示字段（不得反推秘密报价/冻结），以及逐笔 `financial_transactions` 是否公开。
+2. `initial_funds` 的设定与变更流程，以及经 GM 审计的纠错是否允许使账户资金为负；常规 PLAYER 操作已确定不得导致负数。
+3. 固定比赛库的完整字段、`actual_races` 的标准实际比赛标识，以及未胜利战/条件赛在 GM 回填前后能否变更报名 WP 周或类别。
+4. “主要胜鞍”、特殊跑法、满 3 岁、寿命过低与 G1 九胜触发后的精确判定和系统动作。
+5. 生命周期允许的完整跳转，特别是 `RETIRED → BREEDING` 是否必经，以及除公开拍卖流拍外哪些情况可以进入 `DISCARDED`。

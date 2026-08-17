@@ -78,15 +78,21 @@ Owner 与 PLAYER 身份分开：Owner 是游戏内经济与马匹归属主体，
 
 | 表 | 职责与建议存储 | 关系 | PLAYER RLS |
 | --- | --- | --- | --- |
-| `public_auction_events` | 年度/届次、状态、当前 Lot 引用及时间戳。 | 一对多公开拍卖 Lot。 | 全员可读；仅 GM/server 推进。 |
-| `public_auction_lots` | `event_id`、`horse_id`、Lot 编号、起拍价、评价价值、展示/开始/`close_at`/关闭时间、状态、最终结果。 | 每个 Lot 多笔评分、竞价，至多一笔最终成交。 | 全员可读；创建、展示、开始、关闭、确认仅 GM/server。 |
-| `public_auction_lot_reviews` | `lot_id`、`slot`（1–5）、`stars`（1–5）、`comment`、时间戳。 | 每个 Lot 恰好五条评分，分别对应 slot 1–5。 | 全员可读；仅 GM/server 写。 |
-| `public_auction_bids` | `lot_id`、`owner_id`、金额、服务器接收时间、接受/拒绝原因或状态。 | 多对一 Lot 和 Owner；追加式竞价历史。 | 已接受的公开竞价信息按产品公开范围读取；写入只允许 Owner 经受控 server 操作。 |
-| `public_auction_settlements` | 成交 Owner/金额或流拍、GM 确认者/时间、备注和结算状态。 | 每个 Lot 至多一个。 | 公开结果可读；写入仅 GM/server。 |
+| `public_auction_events` | 年度 WP 年、名称、`DRAFT`/`OPEN`/`CLOSED`/`SETTLED`、最低加价单位（当前固定为 `100000`）与时间戳。 | 一对多公开拍卖 Lot。 | 已认证用户可读；仅受控 GM/server RPC 推进。 |
+| `public_auction_lots` | `event_id`、`horse_id`、Lot 编号、起拍价、评价价值、`revealed_at`、当前 Round、当前价/赢家、开始、`close_at`、无报价截止、关闭时间和派生状态。 | Horse 全局至多一个 Lot；每 Lot 多个 Round、五条评分，且每 Round 至多一个 Settlement。 | GM 可读全部；PLAYER 仅可读 `revealed_at IS NOT NULL` 的 Lot。创建、展示、开始、关闭、确认仅受控 GM/server RPC。 |
+| `public_auction_rounds` | `round_number`、`QUEUED`/`OPEN_WAITING`/`BIDDING`/`CLOSED`/`SOLD`/`PASSED`/`VOIDED`、当前价/赢家和全部服务器时间字段。 | 多对一 Lot；Lot 只指向一个当前 Round。Emergency Rollback 创建新 Round 而不覆盖历史。 | PLAYER 仅可读已展示 Lot 的当前 Round；GM 可读全部 Round。 |
+| `public_auction_lot_reviews` | `lot_id`、`slot`（1–5）、`stars`（1–5）、`comment`、时间戳。 | 每个 Lot 恰好五条评分，分别对应 slot 1–5。 | GM 可读全部；PLAYER 仅可读已展示 Lot 的评分；仅 GM/server 写。 |
+| `public_auction_bids` | `lot_id`、`round_id`、`owner_id`、金额、客户端请求幂等键、数据库接收时间。 | 多对一 Round 和 Owner；仅追加历史。 | PLAYER 仅可读已展示 Lot 的当前 Round 已接受 Bid；写入只允许本人经受控 Bid RPC。旧 `VOIDED` Round 的 Bid 仅 GM/audit 历史。 |
+| `public_auction_settlements` | 每个 Round 的 `SOLD`/`PASSED`、赢家/金额、GM 确认、原因、Rollback 标记和引用。 | `round_id` 唯一；同一 Lot 通过新 Round 可保留多个历史 Settlement。 | 直接读取仅 GM；最终未 rollback 结果仅经安全 View 向 authenticated 公开。 |
+| `public_auction_rollback_requests` | 高风险申请、非空原因、严格确认文本、申请/确认/执行者与时间、补偿流水、新 Round。 | 每个 Settlement 至多一个 pending 与一个 executed 请求。 | 仅 GM 可读写/调用；原因和内部引用不公开。 |
 
 评分和评语正式使用 `public_auction_lot_reviews`，不存入 Lot 的固定列。该表要求 `UNIQUE(lot_id, slot)`，并约束 `slot`、`stars` 都在 1–5 范围内。Lot 在展示或开始竞价前必须具备 slot 1–5 五条评分；这一“恰好五条”的跨行条件需由受控操作或等价数据库完整性机制保证。
 
-拍卖运行中可将当前最高价/Owner 放在 Lot 的受控状态字段作高效公开读取，但权威竞价历史仍是 `public_auction_bids`。每次合法报价在同一数据库事务内校验并更新 `close_at` 为服务器当前时间加 10 秒。不得依赖客户端或 Realtime 写入该状态。
+拍卖运行中 Lot 的当前价/当前 Owner 是当前 Round 的受控投影；权威竞价历史是 `public_auction_bids`。所有金额必须为 `100000` 的整数倍：首口 `>= starting_price`，后续口 `>= current_price + minimum_increment`，当前赢家不得自抬，Bid 无撤回路径。报价 RPC 必须接收客户端预期的当前 `round_id` 与幂等 `request_id`：Lot 当前 Round 不匹配即拒绝；同 Owner/同 Round/同请求键仅同金额可幂等返回原 Bid，异金额必须拒绝。每次合法报价在同一数据库事务内锁定 Lot/当前 Round/Owner，使用服务器时间校验期限、检查庭先和其他公开拍卖冻结、写入 append-only Bid，并以最终插入 Bid 的服务器 `accepted_at + 10 秒` 精确更新 `close_at`。不得依赖客户端或 Realtime 写入状态。
+
+`revealed_at` 是展示公开面的最小事实：GM 只能在 Event `OPEN`、Lot/当前 Round 都为 `QUEUED` 且已有五份评分时设置它；该动作只写服务器时间和 Audit，不启动期限、不改变 Round。只有已展示 Lot 才可被 GM 开始，进入 `OPEN_WAITING` 后才设置 10 分钟无报价期限。`OPEN_WAITING` 只有服务器设置的 10 分钟无报价期限，不启动 10 秒竞价时钟；第一口才进入 `BIDDING`。期限到达时系统仅逻辑或显式转为 `CLOSED`，不自动 `SOLD`、`PASSED` 或改变 Horse。GM 可在 `CLOSED` 后确认成交或流拍；有报价的未结算 `CLOSED` Round 可带原因普通重开并保留最高价/赢家，没报价的 Round 恢复 `OPEN_WAITING`。`SOLD`/`PASSED` 禁止普通重开。Emergency Rollback 不清空 `revealed_at`。
+
+Emergency Rollback 使用双阶段 `public_auction_rollback_requests`：申请阶段不改业务事实；严格确认阶段锁定 Lot/Round/Settlement/Horse/Owner。`SOLD` 通过新增正向补偿 `financial_transactions` 保留原扣款，并受控使 Horse `Owner → NULL`、`OWNED_FOAL → FOAL`；`PASSED` 受控使 `DISCARDED → FOAL` 而无资金补偿。两种情况均保留原历史、将旧 Round 标为 `VOIDED`、创建从起拍价重新开始的 `QUEUED` Round，并完整审计。若关联 Event 为 `CLOSED` 或 `SETTLED`，确认 Rollback 必须在同一受控事务将 Event 改为 `OPEN` 并记录状态恢复 Audit，使新 Round 可以再次开拍；该恢复不是普通 `SETTLED → OPEN` 状态转换。公开最终结果使用 `public_auction_public_settlements` 安全 View，仅暴露未 rollback 的 Lot/Event/Horse、结果、赢家、金额和确认时间。
 
 ### 3.5 比赛报名、赛果、状态记录
 
@@ -130,19 +136,21 @@ Owner 与 PLAYER 身份分开：Owner 是游戏内经济与马匹归属主体，
 | --- | --- |
 | Horse 基础资料、当前阶段、当前 Owner、文本形式的骑手/调教师/血统名称、血统因子 | Horse 战绩：出赛次数、胜/亚/季、G1 胜、总 WP 赏金、主要胜鞍 |
 | WP 时间字段、现实时间戳、GM 决定与备注 | 账户资金 = 初始资金 + 正式流水合计 |
-| 庭先 Lot/询问/报价的当前状态及历史、最终成交 | 当前冻结 = 当前有效秘密报价 + 当前公开拍卖最高有效报价 |
-| 公开拍卖 Lot、五条独立评分、追加式竞价、`close_at`、最终成交/流拍 | 可用资金 = 账户资金 − 当前冻结 |
+| 庭先 Lot/询问/报价的当前状态及历史、最终成交 | 当前冻结 = 当前有效秘密报价 + 当前公开拍卖当前 Round 赢家报价 |
+| 公开拍卖 Lot、Round、五条独立评分、追加式竞价、服务器期限、最终成交/流拍和 rollback 申请 | 可用资金 = 账户资金 − 当前冻结 |
 | 报名意图、实际比赛、赛果、伤病、GM 最终体力记录 | 待释放奖金 = 基础 `PENDING` 应收款与未处理调整的有效金额合计；总资产 = 账户资金 + 待释放奖金 |
 | Prize Receivable、奖金调整、正式 Financial Transaction、退役结算状态 | 是否达到 G1 九胜等可从确认赛果计算的提示条件 |
 | 审计日志 | |
 
 如需性能优化，可以添加只读物化视图或受控投影；它们必须可从上述事实重建，且不能成为 GM 任意直接修改的另一份真相。
 
+已发布的 `get_current_owner_funds()` 保持庭先阶段的三字段兼容语义，不追溯修改。公开拍卖阶段新增独立的、无 `owner_id` 参数的 `get_current_owner_financial_summary()`：仅当前 authenticated PLAYER 可调用，返回 `account_funds`、`foal_trade_frozen_funds`、`public_auction_frozen_funds`、`total_frozen_funds` 与 `available_funds`。它由 `auth.uid() → user_profiles → owner_id` 推导 Owner，GM、anon 与 service_role 直接调用均被拒绝；其公开拍卖冻结口径与出价/结算事务相同，即仅当前 Round 的 `BIDDING`/`CLOSED` 赢家报价。
+
 ## 5. RLS 与执行边界
 
 ### PLAYER 数据访问
 
-PLAYER 必须绑定 Owner，且可读全部 Horse、Owner、比赛、公开拍卖状态、奖金应收和 Owner 公开资金汇总；可读写自身 Owner 的尚未处理意图（如报名、庭先询问、秘密报价的受控操作）。除庭先秘密报价和庭先私密 GM 评价外，v0.1 不设置玩家之间的 Owner 数据隔离。
+PLAYER 必须绑定 Owner，且可读全部 Horse、Owner、比赛、公开拍卖状态、奖金应收和 Owner 公开资金汇总；可读写自身 Owner 的尚未处理意图（如报名、庭先询问、秘密报价的受控操作）。公开拍卖为公开竞价：PLAYER 可读当前 Event/Lot/评分/当前 Round 已接受 Bid/当前价/赢家/期限及安全最终结果，但不能直接写任何拍卖基础表，也不能读取 rollback 申请、原因、旧 `VOIDED` Round 或内部 Settlement。除庭先秘密报价和庭先私密 GM 评价外，v0.1 不设置玩家之间的 Owner 数据隔离。
 
 庭先 `secret_bid_offers`、其历史与 `foal_trade_inquiries` 必须按 `owner_id` 严格隔离，GM 例外。报价阶段完全秘密：列表计数、聚合、报错、审计、Realtime channel 和关联查询都必须遵循相同隔离，避免旁路泄漏。GM 确认结算后，所有 PLAYER 仅可通过安全公开投影读取最终成交 Owner 与最终成交价格；失败报价、报价历史、推荐与 override 内部资料继续隔离。公开资金汇总不得包含或可反推出当前秘密报价、秘密报价冻结或可用资金；逐笔 `financial_transactions` 的公开范围仍待产品确认。
 
@@ -165,8 +173,9 @@ GM 可访问并修正全部业务数据，但涉及结算的写入不应由客�
 | --- | --- | --- |
 | 创建、修改、撤回庭先报价 | 同时校验截止、同 Lot 当前报价唯一性、Owner 全部冻结和可用资金，拒绝导致可用资金为负的请求，防止并发超额冻结。 | 请求应有幂等键；重复提交不得产生重复有效报价或改变同价优先时间。 |
 | 庭先 GM 确认成交 | 正常路径必须选出 `amount DESC, priority_at ASC, id ASC` 的系统推荐报价；异常路径必须显式选择另一有效报价并保存非空原因、推荐与选择。两条路径都须锁定 Lot、扣款、分配 Horse Owner、写流水与审计，并原子完成。 | 每 Lot 至多一次最终结算；重试返回同一结算结果。 |
-| 公开拍卖报价 | 锁定当前 Lot，使用数据库服务器时间判断 `close_at`，校验金额/资金及冻结后可用资金非负，写报价，更新最高价及 `close_at`。 | 同一请求重试不得多次延长倒计时或产生重复竞价。 |
-| 公开拍卖 GM 确认 | 锁定 Lot，验证已关闭，成交时写扣款、Owner、流水、审计；流拍时更新 Horse 为 `DISCARDED`。 | 每 Lot 至多一个最终结果；不允许重复扣款或重复转归属。 |
+| 公开拍卖报价 | 锁定当前 Lot/当前 Round/Owner，先校验客户端预期 `round_id` 仍是 Lot 当前 Round；再使用数据库服务器时间判断 10 秒或无报价 10 分钟期限，校验 10 万单位、首口/增量/非自抬、庭先与其他 Round 冻结以及可用资金非负，写 Bid 并以该 Bid 最终 `accepted_at + 10 秒` 更新当前赢家/期限。 | 同 Owner/同 Round/同请求键的同金额重试返回原 Bid，不重复延长倒计时或产生重复竞价；同键不同金额拒绝。 |
+| 公开拍卖 GM 确认 | 锁定 Lot/Round/Horse/赢家 Owner，验证合法 `CLOSED`；成交时写追加扣款、Owner、Horse 阶段、Round 与审计；无赢家时 `PASSED` 并受控更新 Horse 为 `DISCARDED`。 | 每 Round 至多一个最终结果；重试返回同一 Settlement，不得重复扣款或重复转归属。 |
+| 公开拍卖 Emergency Rollback | 两阶段锁定申请、Lot/Round/Settlement/Horse/Owner；保留旧历史，成交时追加补偿流水、受控回退 Horse，作废旧 Round 并创建新 Round。 | 每 Settlement 至多成功一次；重复确认无副作用，绝不重复退款或创建新 Round。 |
 | 比赛报名及 GM 确认 | 校验 Horse、伤病与同 Horse 同 WP 周冲突；GM 修改要保留决定记录。 | 重复请求不得产生两笔占用同一周的有效报名。 |
 | 赛果、GM 确认奖金与应收款 | GM 确认金额、赛果与基础应收创建要原子化并防止重复；后续赛果更正通过受控调整，不重建基础应收。 | 每个来源赛果的基础应收应有唯一来源约束或幂等键；每项调整亦需唯一来源/幂等键。 |
 | 退役与奖金释放 | 锁定 Horse/退役案，找到其全部有效 `PENDING` 应收和调整，生成对应正式流水，标记已释放，记录审计。 | 重试不得使任一基础应收或调整二次释放或写入重复流水。 |
@@ -182,9 +191,11 @@ GM 可访问并修正全部业务数据，但涉及结算的写入不应由客�
 - 一匹 Horse 的 `foal_trade_lots` 全局至多一条，且其 Session 年份等于 `birth_year`；一匹 Horse 的 `public_auction_lots` 全局至多一条，且只允许庭先未成交的同出生年 Horse 进入。
 - `foal_trade_inquiries`：同一 `session_id`、`owner_id` 只能一条。
 - 当前有效秘密报价：同一 `owner_id`、`lot_id` 只能一条；锁定后不得由玩家修改。
-- 每个公开拍卖事件的同时进行 Lot 至多一个；每个 Lot 至多一个最终结算。庭先成交结算必须保存系统推荐报价；仅异常路径可选择不同有效报价，且必须保存非空原因和审计。
+- 每个公开拍卖事件的同时 `OPEN_WAITING`/`BIDDING` Lot 至多一个；每个 Lot 同时 `OPEN_WAITING`/`BIDDING` Round 至多一个；每个 Round 至多一个 Settlement。`public_auction_events` 只允许 `DRAFT → OPEN → CLOSED`、`CLOSED → OPEN`、以及在全部 Lot 已最终处理且无待确认 Rollback 时 `CLOSED → SETTLED`；同状态为无副作用重试，且活跃 `OPEN_WAITING`/`BIDDING` Lot 存在时不得 `OPEN → CLOSED`。Lot 的历史 Round 可因 Emergency Rollback 追加，但旧 Round 必须 `VOIDED` 且不再参与公开读取、赢家或冻结。庭先成交结算必须保存系统推荐报价；仅异常路径可选择不同有效报价，且必须保存非空原因和审计。
 - `public_auction_lot_reviews`：`UNIQUE(lot_id, slot)`；`slot` 和 `stars` 均为 1–5；Lot 展示或开拍前恰好具备五个 slot。
-- `public_auction_lots.close_at` 和合法报价接收时间必须由数据库服务器产生/校验。
+- `public_auction_lot_reviews` 必须在 GM 打开 Lot 前存在五个 slot；`public_auction_bids.amount`、起拍价与最低加价单位必须是 `100000` 的整数倍；首口不低于起拍价，后续至少加一个单位，当前赢家不可再次报价。
+- 公开拍卖 `close_at`、无报价截止与合法报价接收时间必须由数据库服务器产生/校验；Bid、`financial_transactions` 与 Audit 不可通过普通 UPDATE/DELETE 篡改。
+- `public_auction_settlements` 的成交 Owner/Horse/Round/金额必须与当前赢家一致；受控 Horse guard 仅允许对应 Settlement 的 `NULL → Owner/OWNED_FOAL`，以及对应已执行 rollback 的反向回退。
 - 同一 Horse、同一 WP 年月周的有效比赛报名至多一笔；是否包含已撤回/拒绝状态应在实现前确认。
 - 每条 `race_result` 必须归属一场 `actual_race`；同一 Horse 在同一实际比赛至多一条赛果；有来源报名时一条报名至多一条赛果。
 - 同一来源赛果不得重复生成基础 `prize_receivable`；奖金调整必须引用其基础应收；已释放基础应收或调整均须有且只有一次对应正式流水或修正流水。
@@ -194,9 +205,8 @@ GM 可访问并修正全部业务数据，但涉及结算的写入不应由客�
 
 以下问题仍会改变约束、RLS、显示或事务细节，需在相应 migration/功能实施前由产品方确认：
 
-1. 公开拍卖起拍价与最小加价单位的精确合法性；公开拍卖是否允许撤回、最高价 Owner 再次出价，以及 GM 是否能改价或重开已关闭 Lot。
-2. 公开资金汇总的确切字段（在不得反推秘密报价/冻结的前提下），以及逐笔 `financial_transactions` 是否公开、向谁公开。
-3. `initial_funds` 的设定与变更流程，以及经 GM 审计的纠错是否允许使账户资金为负；常规 PLAYER 操作已确定不得导致负数。
-4. 固定比赛库的完整字段、`actual_races` 的标准实际比赛标识，以及未胜利战/条件赛在 GM 回填前后能否变更报名 WP 周或类别。
-5. “主要胜鞍”、特殊跑法、满 3 岁、寿命过低与 G1 九胜触发后的精确判定和系统动作。
-6. 生命周期允许的完整跳转集合，特别是 `RETIRED → BREEDING` 是否必经，以及除公开拍卖流拍外哪些情况可以进入 `DISCARDED`。
+1. 公开资金汇总的确切字段（在不得反推秘密报价/冻结的前提下），以及逐笔 `financial_transactions` 是否公开、向谁公开。
+2. `initial_funds` 的设定与变更流程，以及经 GM 审计的纠错是否允许使账户资金为负；常规 PLAYER 操作已确定不得导致负数。
+3. 固定比赛库的完整字段、`actual_races` 的标准实际比赛标识，以及未胜利战/条件赛在 GM 回填前后能否变更报名 WP 周或类别。
+4. “主要胜鞍”、特殊跑法、满 3 岁、寿命过低与 G1 九胜触发后的精确判定和系统动作。
+5. 生命周期允许的完整跳转集合，特别是 `RETIRED → BREEDING` 是否必经，以及除公开拍卖流拍外哪些情况可以进入 `DISCARDED`。
