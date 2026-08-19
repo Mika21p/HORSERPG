@@ -180,9 +180,13 @@ GM 审核 PENDING 意向后可拒绝，或创建单独的 `confirmed_race_entrie
 
 ## 9. 比赛、体力、伤病和统计
 
-GM 在 WP 内实际操作比赛，网站不与 WP 自动同步。v0.4-A 的 `confirmed_race_entries` 是赛前权威安排，尚不代表 WP 实际已运行的比赛；未来 `actual_races` 将记录 GM 最终在 WP 中执行的一场实际比赛，一场实际比赛可关联多匹 Horse 的 `race_results`。赛后由 GM 回填实际比赛、名次、WP 赏金、实际骑手、实际跑法和必要备注。
+GM 在 WP 内实际操作比赛，网站不与 WP 自动同步。`confirmed_race_entries` 是赛前权威安排，`actual_races` 是 GM 在 WP 中实际执行的一场比赛，`race_results` 是某匹 Horse 的赛后事实；三者物理分离，实际比赛的时间、比赛、骑手和跑法可以不同于赛前安排，且不得以赛果覆盖计划事实。一场 `actual_races` 可以关联多匹 Horse 的多个 `race_results`，以表达多人同场。实际比赛只能记录在当前或过去的 WP 周，不能记录未来周。
 
-系统根据确认后的赛果自动统计 Horse 的出赛次数、胜场、亚军、季军、G1 胜场、总 WP 赏金和主要胜鞍。这些统计是赛果的派生结果，原则上不得作为 Horse 的手工维护字段。
+固定比赛的实际赛果创建时必须从 `race_catalog` 复制比赛名称与 Grade 到 `actual_races` 作为历史快照；之后目录改名或停用不得改变过去比赛。非固定比赛使用 GM 填写的非空比赛名，不关联 Catalog，且 Grade 为 NULL。赛果由 GM 受控录入、修正或作废：同一确认赛程同一时间只有一个有效赛果；重复录入完全相同事实返回原赛果，不同事实必须走更正流程；作废保留历史并允许重新录入。基础表和 GM 备注不对 PLAYER 公开，PLAYER 仅通过不含操作者、GM Note 与作废历史的安全公开投影读取当前有效赛果。
+
+`race_results.prize_amount` 是 GM 从 WP 输入的最终**赛果事实**，金额使用 `bigint`，可为 0，当前不生成 `financial_transactions`、不改变 Owner 资金、也不创建 Prize Receivable。v0.4-D 奖金模块部署后，必须扩展赛果更正与作废流程，对已生成的应收采用受控调整，避免重复入账。
+
+系统可从当前有效赛果动态统计 Horse 的出赛次数、胜场、亚军、季军、G1 胜场、总 WP 赏金和主要胜鞍；这些统计不得作为 Horse 的手工维护字段。
 
 体力结算在 v0.1 完全由 GM 根据 WP 未同步的动态数据自行计算、投骰并填写最终结果；`condition_records` 只记录 GM 的最终裁定。网站不从该记录自动推导“正确”的体力或伤病结论；未来辅助计算器只能给出建议。
 
@@ -190,7 +194,7 @@ GM 在 WP 内实际操作比赛，网站不与 WP 自动同步。v0.4-A 的 `con
 
 ## 10. 奖金与退役
 
-GM 回填比赛 WP 赏金后，由 GM 输入或确认最终的 Prize Receivable 金额。网站未来可提供折算辅助，但 `prize_receivables.amount` 不要求由数据库按固定公式自动计算。确认后生成状态为 `PENDING` 的 Prize Receivable，计入 Owner 待释放奖金而不进入可用资金。
+v0.4-D 将在 GM 依据赛果输入或确认最终 Prize Receivable 金额后，创建状态为 `PENDING` 的 Prize Receivable，计入 Owner 待释放奖金而不进入可用资金。网站未来可提供折算辅助，但 `prize_receivables.amount` 不要求由数据库按固定公式自动计算；它不等同于当前已记录但尚未入账的 `race_results.prize_amount`。
 
 Horse 退役后，属于该 Horse 的全部 `PENDING` Prize Receivable 一次性释放：生成正式 Financial Transaction，并将状态变更为 `RELEASED`。该流程必须防止重复退役结算导致奖金重复到账。赛果在已产生奖金应收或奖金已释放后被修正时，必须通过受控调整处理，不能再次生成或释放重复奖金。
 
@@ -212,6 +216,5 @@ GM 对以下关键变更必须留下 Audit Log：资金、比赛结果、WP 赏�
 
 1. 公开资金汇总的确切对外展示字段（不得反推秘密报价/冻结），以及逐笔 `financial_transactions` 是否公开。
 2. `initial_funds` 的设定与变更流程，以及经 GM 审计的纠错是否允许使账户资金为负；常规 PLAYER 操作已确定不得导致负数。
-3. `actual_races` 的标准实际比赛标识，以及未来赛果回填时与 `confirmed_race_entries` 的精确关联和修正流程。
-4. “主要胜鞍”、特殊跑法、满 3 岁、寿命过低与 G1 九胜触发后的精确判定和系统动作。
-5. 生命周期允许的完整跳转，特别是 `RETIRED → BREEDING` 是否必经，以及除公开拍卖流拍外哪些情况可以进入 `DISCARDED`。
+3. “主要胜鞍”、特殊跑法、满 3 岁、寿命过低与 G1 九胜触发后的精确判定和系统动作。
+4. 生命周期允许的完整跳转，特别是 `RETIRED → BREEDING` 是否必经，以及除公开拍卖流拍外哪些情况可以进入 `DISCARDED`。
