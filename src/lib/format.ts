@@ -71,3 +71,37 @@ export function formatFoalTradeLotStatus(status: string) {
 
   return labels[status] ?? status;
 }
+
+export function formatWpTime(
+  year: number | string | null | undefined,
+  month: number | string | null | undefined,
+  week: number | string | null | undefined,
+) {
+  if (year === null || year === undefined || month === null || month === undefined || week === null || week === undefined) {
+    return "—";
+  }
+
+  return `WP ${year} 年 ${month} 月 Week ${week}`;
+}
+
+export function formatRaceKind(kind: string | null | undefined) {
+  const labels: Record<string, string> = {
+    CATALOG: "固定比赛",
+    MAIDEN: "未胜利赛",
+    CONDITION: "条件赛",
+    OTHER: "其他比赛",
+  };
+
+  return kind ? labels[kind] ?? kind : "—";
+}
+
+export function formatRaceEntryRequestStatus(status: string | null | undefined) {
+  const labels: Record<string, string> = {
+    PENDING: "等待 GM 审核",
+    CONFIRMED: "已确认",
+    REJECTED: "已拒绝",
+    WITHDRAWN: "已撤回",
+  };
+
+  return status ? labels[status] ?? status : "—";
+}

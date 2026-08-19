@@ -7,6 +7,7 @@ const links = [
   ["Game State", "/admin/game-state", "设置当前 Winning Post 时间"],
   ["庭先取引", "/admin/foal-trade", "管理庭先届次、Lot、询问、秘密报价与结算"],
   ["公开拍卖", "/admin/public-auction", "主持年末公开拍卖、公开竞价与受控回滚"],
+  ["比赛管理", "/admin/races", "审核 PLAYER 报名、安排赛程并维护比赛目录"],
 ] as const;
 
 export default function AdminHomePage() {
