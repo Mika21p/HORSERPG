@@ -22,6 +22,30 @@ export function formatDateTime(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
+function chinaDateTimeParts(value: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "Asia/Shanghai",
+  }).formatToParts(new Date(value));
+
+  return new Map(parts.map((part) => [part.type, part.value]));
+}
+
+export function toChinaDateInput(value: string) {
+  const parts = chinaDateTimeParts(value);
+  return `${parts.get("year")}-${parts.get("month")}-${parts.get("day")}`;
+}
+
+export function toChinaTimeInput(value: string) {
+  const parts = chinaDateTimeParts(value);
+  return `${parts.get("hour")}:${parts.get("minute")}`;
+}
+
 export function toUtcDateTimeInput(value: string) {
   return new Date(value).toISOString().slice(0, 16);
 }

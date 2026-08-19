@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 
 import {
   createFoalTradeLot,
+  removeFoalTradeDraftLot,
+  removeFoalTradeDraftSession,
   replyToFoalTradeInquiry,
   settleFoalTradeLot,
   settleFoalTradeLotOverride,
@@ -17,7 +19,8 @@ import {
   formatFoalTradeLotStatus,
   formatFoalTradeSessionStatus,
   formatGameMoney,
-  toUtcDateTimeInput,
+  toChinaDateInput,
+  toChinaTimeInput,
 } from "@/lib/format";
 
 type PageProps = {
@@ -26,6 +29,17 @@ type PageProps = {
 };
 
 export const dynamic = "force-dynamic";
+
+const scheduleStartTimes = ["09:00", "12:00", "18:00", "20:00", "21:00", "22:00"];
+const scheduleDurations = [
+  ["1", "1 小时"],
+  ["3", "3 小时"],
+  ["6", "6 小时"],
+  ["12", "12 小时"],
+  ["24", "1 天"],
+  ["72", "3 天"],
+  ["168", "7 天"],
+] as const;
 
 export default async function AdminFoalTradeDetailPage({ params, searchParams }: PageProps) {
   const [{ sessionId }, { notice }, { supabase }] = await Promise.all([params, searchParams, requireGM()]);
@@ -108,6 +122,12 @@ export default async function AdminFoalTradeDetailPage({ params, searchParams }:
   const settlementByLot = new Map((settlements ?? []).map((settlement) => [settlement.lot_id, settlement]));
   const canConfigure = session.status === "DRAFT" && new Date(session.starts_at) > new Date();
   const activeDeadlinePassed = new Date(session.ends_at) <= new Date();
+  const currentStartTime = toChinaTimeInput(session.starts_at);
+  const selectedStartTime = scheduleStartTimes.includes(currentStartTime) ? currentStartTime : "";
+  const exactDurationHours = (new Date(session.ends_at).getTime() - new Date(session.starts_at).getTime()) / (60 * 60 * 1000);
+  const selectedDuration = Number.isInteger(exactDurationHours) && scheduleDurations.some(([value]) => value === String(exactDurationHours))
+    ? String(exactDurationHours)
+    : "";
 
   return (
     <main className="mx-auto w-full max-w-7xl px-6 py-10">
@@ -138,9 +158,11 @@ export default async function AdminFoalTradeDetailPage({ params, searchParams }:
         {canConfigure && (
           <div className="rounded-xl border border-stone-800 bg-stone-900 p-6">
             <h2 className="text-xl font-semibold text-amber-200">草稿时间配置</h2>
-            <ActionForm action={updateFoalTradeSessionSchedule.bind(null, session.id)} className="mt-5 grid gap-4 sm:grid-cols-2" pendingLabel="正在保存…" submitLabel="保存时间">
-              <label className="admin-label">开始（UTC）<input className="admin-input" defaultValue={toUtcDateTimeInput(session.starts_at)} name="starts_at" required type="datetime-local" /></label>
-              <label className="admin-label">截止（UTC）<input className="admin-input" defaultValue={toUtcDateTimeInput(session.ends_at)} name="ends_at" required type="datetime-local" /></label>
+            <p className="mt-2 text-sm leading-6 text-stone-400">按中国标准时间设置开始日期和时刻，再选择报价时长。系统会自动计算并保存截止时间。</p>
+            <ActionForm action={updateFoalTradeSessionSchedule.bind(null, session.id)} className="mt-5 grid gap-4 sm:grid-cols-3" pendingLabel="正在保存…" submitLabel="保存时间">
+              <label className="admin-label">开始日期（中国标准时间）<input className="admin-input" defaultValue={toChinaDateInput(session.starts_at)} name="start_date" required type="date" /></label>
+              <label className="admin-label">开始时刻<select className="admin-input" defaultValue={selectedStartTime} name="start_time" required><option disabled value="">{selectedStartTime ? "选择时刻" : `当前为 ${currentStartTime}；请选择预设`}</option>{scheduleStartTimes.map((time) => <option key={time} value={time}>{time}</option>)}</select></label>
+              <label className="admin-label">报价时长<select className="admin-input" defaultValue={selectedDuration} name="duration_hours" required><option disabled value="">{selectedDuration ? "选择时长" : "请选择 1 小时至 7 天的预设"}</option>{scheduleDurations.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             </ActionForm>
           </div>
         )}
@@ -155,6 +177,16 @@ export default async function AdminFoalTradeDetailPage({ params, searchParams }:
             <input className="admin-input mt-0" min="0" name="minimum_price" placeholder="最低报价" required step="1" type="number" />
           </ActionForm>
           {!availableHorses.length && <p className="mt-3 text-sm text-stone-500">没有可加入的 Horse。</p>}
+        </section>
+      )}
+
+      {canConfigure && (
+        <section className="mt-6 rounded-xl border border-red-400/35 bg-red-400/5 p-6">
+          <h2 className="text-xl font-semibold text-red-100">危险操作：移除草稿届次</h2>
+          <p className="mt-2 text-sm leading-6 text-stone-300">仅未开始的草稿届次可移除。该操作会移除其中所有未开始 Lot，使 Horse 可重新配置；询问、报价、结算或已开始届次绝不能通过此处删除。每项移除都会保留审计记录。</p>
+          <ActionForm action={removeFoalTradeDraftSession.bind(null, session.id)} className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" confirmation="确认移除本草稿届次及其全部未开始 Lot？此操作不能通过普通页面撤销。" pendingLabel="正在移除…" submitLabel="移除草稿届次" variant="danger">
+            <input className="admin-input mt-0" name="removal_reason" placeholder="必须填写移除原因" required />
+          </ActionForm>
         </section>
       )}
 
@@ -181,6 +213,16 @@ export default async function AdminFoalTradeDetailPage({ params, searchParams }:
                 </div>
                 <dl className="grid grid-cols-2 gap-4 text-sm lg:text-right"><div><dt className="text-stone-500">最低报价</dt><dd className="mt-1 font-mono text-amber-200">{formatGameMoney(lot.minimum_price)}</dd></div><div><dt className="text-stone-500">Lot 状态</dt><dd className="mt-1 text-stone-200">{formatFoalTradeLotStatus(lot.status)}</dd></div></dl>
               </div>
+
+              {canConfigure && (
+                <details className="mt-5 rounded-lg border border-red-400/30 bg-red-400/5 p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-red-200">危险操作：移除此草稿 Lot</summary>
+                  <p className="mt-3 text-sm leading-6 text-stone-300">仅未开始、没有询问、报价或结算历史的 Lot 可以移除。Horse 会重新成为可配置候选，移除原因会写入审计。</p>
+                  <ActionForm action={removeFoalTradeDraftLot.bind(null, session.id, lot.id)} className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" confirmation="确认移除这个草稿 Lot？此操作不能通过普通页面撤销。" pendingLabel="正在移除…" submitLabel="移除 Lot" variant="danger">
+                    <input className="admin-input mt-0" name="removal_reason" placeholder="必须填写移除原因" required />
+                  </ActionForm>
+                </details>
+              )}
 
               {settlement ? (
                 <div className="mt-6 rounded-lg border border-emerald-400/30 bg-emerald-400/5 p-4 text-sm"><p className="font-semibold text-emerald-200">已结算：{settlement.status}</p>{settlement.status === "SOLD" && <p className="mt-2 text-stone-200">Owner：{ownerNameById.get(settlement.winner_owner_id ?? "") ?? "—"} · 价格：{formatGameMoney(settlement.amount)}{settlement.is_override ? " · GM 例外裁定" : ""}</p>}<p className="mt-2 text-xs text-stone-500">确认：{formatDateTime(settlement.confirmed_at)}</p></div>

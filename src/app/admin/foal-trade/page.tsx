@@ -59,11 +59,12 @@ export default async function AdminFoalTradePage({ searchParams }: PageProps) {
 
       <section className="h-fit rounded-xl border border-stone-800 bg-stone-900 p-6">
         <h2 className="text-xl font-semibold text-amber-200">创建庭先届次</h2>
-        <p className="mt-2 text-sm leading-6 text-stone-400">新届次先以草稿创建。时间字段按 UTC 输入并保存；页面展示统一换算为中国标准时间。</p>
+        <p className="mt-2 text-sm leading-6 text-stone-400">新届次先以草稿创建。按中国标准时间选择开始日期、时刻与报价时长；系统自动保存真实开始和截止时间。</p>
         <ActionForm action={createFoalTradeSession} className="mt-5 space-y-4" pendingLabel="正在创建…" submitLabel="创建草稿届次">
           <label className="admin-label">WP 年份<input className="admin-input" min="1" name="wp_year" required step="1" type="number" /></label>
-          <label className="admin-label">开始时间（UTC）<input className="admin-input" name="starts_at" required type="datetime-local" /></label>
-          <label className="admin-label">截止时间（UTC）<input className="admin-input" name="ends_at" required type="datetime-local" /></label>
+          <label className="admin-label">开始日期（中国标准时间）<input className="admin-input" name="start_date" required type="date" /></label>
+          <label className="admin-label">开始时刻（中国标准时间）<select className="admin-input" defaultValue="" name="start_time" required><option disabled value="">选择时刻</option><option value="09:00">09:00</option><option value="12:00">12:00</option><option value="18:00">18:00</option><option value="20:00">20:00</option><option value="21:00">21:00</option><option value="22:00">22:00</option></select></label>
+          <label className="admin-label">报价时长<select className="admin-input" defaultValue="" name="duration_hours" required><option disabled value="">选择时长</option><option value="1">1 小时</option><option value="3">3 小时</option><option value="6">6 小时</option><option value="12">12 小时</option><option value="24">1 天</option><option value="72">3 天</option><option value="168">7 天</option></select></label>
         </ActionForm>
       </section>
     </main>

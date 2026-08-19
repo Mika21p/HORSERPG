@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { requireGM } from "@/lib/auth/session";
 
 const sessionStatuses = new Set(["DRAFT", "OPEN", "CLOSED", "REVIEWING"]);
+const scheduleDurations = new Set(["1", "3", "6", "12", "24", "72", "168"]);
+const chinaStandardTimeOffsetMs = 8 * 60 * 60 * 1000;
 
 function redirectWithNotice(path: string, notice: string): never {
   redirect(`${path}?notice=${encodeURIComponent(notice)}`);
@@ -25,14 +27,37 @@ function nonNegativeInteger(formData: FormData, name: string) {
   return /^\d+$/.test(value) ? value : null;
 }
 
-function utcDateTime(formData: FormData, name: string) {
-  const value = requiredText(formData, name);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(value)) {
+function chinaSchedule(formData: FormData) {
+  const date = requiredText(formData, "start_date");
+  const time = requiredText(formData, "start_time");
+  const durationHours = requiredText(formData, "duration_hours");
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)
+    || !/^\d{2}:\d{2}$/.test(time)
+    || !scheduleDurations.has(durationHours)) {
     return null;
   }
 
-  const date = new Date(`${value}Z`);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  // Treat the selected date/time as China Standard Time wall-clock input, not
+  // the browser's timezone. PostgreSQL continues to store timestamptz facts.
+  const wallClock = new Date(`${date}T${time}:00.000Z`);
+  if (Number.isNaN(wallClock.getTime())
+    || wallClock.toISOString().slice(0, 10) !== date
+    || wallClock.toISOString().slice(11, 16) !== time) {
+    return null;
+  }
+
+  const startsAt = new Date(wallClock.getTime() - chinaStandardTimeOffsetMs);
+  const endsAt = new Date(startsAt.getTime() + Number(durationHours) * 60 * 60 * 1000);
+
+  if (startsAt.getTime() <= Date.now()) {
+    return null;
+  }
+
+  return {
+    startsAt: startsAt.toISOString(),
+    endsAt: endsAt.toISOString(),
+  };
 }
 
 function revalidateTrade(sessionId?: string) {
@@ -50,17 +75,16 @@ function revalidateTrade(sessionId?: string) {
 export async function createFoalTradeSession(formData: FormData) {
   const { supabase } = await requireGM();
   const wpYear = positiveInteger(formData, "wp_year");
-  const startsAt = utcDateTime(formData, "starts_at");
-  const endsAt = utcDateTime(formData, "ends_at");
+  const schedule = chinaSchedule(formData);
 
-  if (!wpYear || !startsAt || !endsAt || new Date(endsAt) <= new Date(startsAt)) {
-    redirectWithNotice("/admin/foal-trade", "请填写有效的 WP 年份、UTC 开始时间和晚于开始时间的截止时间。");
+  if (!wpYear || !schedule) {
+    redirectWithNotice("/admin/foal-trade", "请选择未来的中国标准开始日期、开始时刻与报价时长。");
   }
 
   const { error } = await supabase.from("foal_trade_sessions").insert({
     wp_year: wpYear,
-    starts_at: startsAt,
-    ends_at: endsAt,
+    starts_at: schedule.startsAt,
+    ends_at: schedule.endsAt,
     status: "DRAFT",
   });
 
@@ -74,11 +98,10 @@ export async function createFoalTradeSession(formData: FormData) {
 
 export async function updateFoalTradeSessionSchedule(sessionId: string, formData: FormData) {
   const { supabase } = await requireGM();
-  const startsAt = utcDateTime(formData, "starts_at");
-  const endsAt = utcDateTime(formData, "ends_at");
+  const schedule = chinaSchedule(formData);
 
-  if (!startsAt || !endsAt || new Date(endsAt) <= new Date(startsAt)) {
-    redirectWithNotice(`/admin/foal-trade/${sessionId}`, "请填写有效的 UTC 开始时间和截止时间。");
+  if (!schedule) {
+    redirectWithNotice(`/admin/foal-trade/${sessionId}`, "请选择未来的中国标准开始日期、开始时刻与报价时长。");
   }
 
   const { data: session } = await supabase
@@ -93,7 +116,7 @@ export async function updateFoalTradeSessionSchedule(sessionId: string, formData
 
   const { error } = await supabase
     .from("foal_trade_sessions")
-    .update({ starts_at: startsAt, ends_at: endsAt })
+    .update({ starts_at: schedule.startsAt, ends_at: schedule.endsAt })
     .eq("id", sessionId);
 
   if (error) {
@@ -101,7 +124,7 @@ export async function updateFoalTradeSessionSchedule(sessionId: string, formData
   }
 
   revalidateTrade(sessionId);
-  redirectWithNotice(`/admin/foal-trade/${sessionId}`, "庭先现实时间已更新。");
+  redirectWithNotice(`/admin/foal-trade/${sessionId}`, "庭先时间已按中国标准时间与所选时长更新。");
 }
 
 export async function updateFoalTradeSessionStatus(sessionId: string, formData: FormData) {
@@ -156,6 +179,62 @@ export async function createFoalTradeLot(sessionId: string, formData: FormData) 
 
   revalidateTrade(sessionId);
   redirectWithNotice(`/admin/foal-trade/${sessionId}`, "庭先 Lot 已创建。");
+}
+
+function draftRemovalErrorNotice(message: string | undefined) {
+  const normalized = message?.toLowerCase() ?? "";
+  if (normalized.includes("non-empty removal reason")) {
+    return "移除草稿必须填写非空原因。";
+  }
+  if (normalized.includes("only a gm")) {
+    return "当前操作仅限 GM。";
+  }
+  if (normalized.includes("unstarted") || normalized.includes("player intent") || normalized.includes("settlement history")) {
+    return "只能移除尚未开始且没有询问、报价或结算历史的草稿配置。";
+  }
+  return "草稿移除未被数据库接受。请刷新后确认当前状态。";
+}
+
+export async function removeFoalTradeDraftLot(sessionId: string, lotId: string, formData: FormData) {
+  const { supabase } = await requireGM();
+  const reason = requiredText(formData, "removal_reason");
+
+  if (!reason) {
+    redirectWithNotice(`/admin/foal-trade/${sessionId}`, "移除 Lot 必须填写原因。");
+  }
+
+  const { error } = await supabase.rpc("remove_foal_trade_draft_lot", {
+    p_lot_id: lotId,
+    p_reason: reason,
+  });
+
+  if (error) {
+    redirectWithNotice(`/admin/foal-trade/${sessionId}`, draftRemovalErrorNotice(error.message));
+  }
+
+  revalidateTrade(sessionId);
+  redirectWithNotice(`/admin/foal-trade/${sessionId}`, "草稿 Lot 已移除；Horse 可以重新配置。移除原因已审计。");
+}
+
+export async function removeFoalTradeDraftSession(sessionId: string, formData: FormData) {
+  const { supabase } = await requireGM();
+  const reason = requiredText(formData, "removal_reason");
+
+  if (!reason) {
+    redirectWithNotice(`/admin/foal-trade/${sessionId}`, "移除草稿届次必须填写原因。");
+  }
+
+  const { error } = await supabase.rpc("remove_foal_trade_draft_session", {
+    p_session_id: sessionId,
+    p_reason: reason,
+  });
+
+  if (error) {
+    redirectWithNotice(`/admin/foal-trade/${sessionId}`, draftRemovalErrorNotice(error.message));
+  }
+
+  revalidateTrade(sessionId);
+  redirectWithNotice("/admin/foal-trade", "草稿庭先届次及其未开始 Lot 已移除。所有移除均已审计。");
 }
 
 export async function replyToFoalTradeInquiry(sessionId: string, inquiryId: string, formData: FormData) {
