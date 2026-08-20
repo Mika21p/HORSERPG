@@ -21,7 +21,7 @@ auth.users ── 1:1 ── user_profiles ── PLAYER:1:1 ── owners ─�
                                                               ├──< injuries
                                                               └──< condition_records
 
-race_results ── 0..1 prize_receivables ──< prize_receivable_adjustments  (v0.4-D 以后)
+race_results ── 1:1 prize_receivables  (v0.4-D：PENDING/CANCELLED；调整与释放为 v0.4-E+)
 
 foal_trade_sessions ──< foal_trade_lots ── 1:1 ── horses
        ├──< foal_trade_inquiries
@@ -112,18 +112,18 @@ Emergency Rollback 使用双阶段 `public_auction_rollback_requests`：申请�
 
 Race Management v0.4-A 采用 Request + Confirmed 双表：PLAYER 可以为自己的 ACTIVE Horse 提交任意多个未来或当前周 PENDING 意向；GM Confirm RPC 必须显式写最终 WP 时间与比赛身份，允许最终时间/比赛覆盖请求，且骑手/跑法可空。GM 也可通过受控 Direct Confirm RPC 为已有 Owner 的 ACTIVE Horse 创建不附带 Player Request 的权威赛程；该路径不接受 Owner 参数，而是从锁定的 Horse 派生 Owner。仅 `confirmed_race_entries` 以 `(horse_id, wp_year, wp_month, wp_week)` 唯一约束占用赛程；多个 PENDING 同周意向合法。两条 GM 路径共用 Horse、`game_state`、比赛身份和 ACTIVE injury 的服务器端校验；Request 确认在同一事务原子写 Confirmed Entry、Request 状态和 Audit。双向触发器保证有来源的 Confirmed Entry 对应 PENDING Request，且 CONFIRMED Request 恰好有一条匹配赛程。公开赛程只能通过安全投影读取，不公开 Request、GM 备注或确认者。伤病冲突和特殊跑法规则应在 server-side 检查，GM 保留未来赛果层的最终裁定能力。
 
-Race Results v0.4-C 已确定三层事实：`confirmed_race_entries` 是赛前计划，`actual_races` 是 Winning Post 实际发生的比赛，`race_results` 是某 Horse 的赛后事实；计划与实际时间、比赛、骑手、跑法允许不同且永久并存。创建/更正 Actual Race 只能使用当前或过去 WP 周；Catalog 仅要求引用行存在而不要求 `is_active`，并在 `race_name`/`grade` 存历史快照，之后目录变动不得回写历史。非 Catalog Actual Race 使用非空 label 作为 `race_name`、不引用 Catalog、`grade = NULL`。Result 只能由 GM RPC 从 Confirmed Entry 派生 Horse，不能让客户端传 Horse/Owner；更正不能迁移 Entry 或 Horse，选错 Entry 必须 VOID 旧结果后重新 Record。`prize_amount` 是无公式的 GM 最终赛果金额，v0.4-C 不创建 Prize Receivable、Financial Transaction、资金或待释放奖金副作用；v0.4-D 必须扩展更正/VOID 以受控调整已存在的应收。
+Race Results v0.4-C 已确定三层事实：`confirmed_race_entries` 是赛前计划，`actual_races` 是 Winning Post 实际发生的比赛，`race_results` 是某 Horse 的赛后事实；计划与实际时间、比赛、骑手、跑法允许不同且永久并存。创建/更正 Actual Race 只能使用当前或过去 WP 周；Catalog 仅要求引用行存在而不要求 `is_active`，并在 `race_name`/`grade` 存历史快照，之后目录变动不得回写历史。非 Catalog Actual Race 使用非空 label 作为 `race_name`、不引用 Catalog、`grade = NULL`。Result 只能由 GM RPC 从 Confirmed Entry 派生 Horse，不能让客户端传 Horse/Owner；更正不能迁移 Entry 或 Horse，选错 Entry 必须 VOID 旧结果后重新 Record。`prize_amount` 是无公式的 GM 最终赛果金额。v0.4-D 以 Race Result Trigger 原子生成每 Result 一条 Prize Receivable：`CONFIRMED → PENDING`、`VOIDED → CANCELLED`，真实金额更正只调整同一应收，Void 后重新 Record 会产生新的来源 Result/Receivable。该应收不创建 Financial Transaction，也不改变资金、可用资金或冻结。
 
 ### 3.6 财务、奖金与退役
 
 | 表 | 职责与建议存储 | 关系 | PLAYER RLS |
 | --- | --- | --- | --- |
 | `financial_transactions` | Owner、`amount bigint`（正负）、交易类别、有效现实时间、来源对象/结算引用、GM/系统操作者、备注、时间戳。仅记录真正入账或扣款的事实。 | 多对一 Owner；可由拍卖、庭先、奖金释放或修正产生。 | 逐笔公开范围未定；仅 GM/server 追加，禁止普通 UPDATE/DELETE。 |
-| `prize_receivables` | Horse、Owner、来源赛果、`amount bigint`（GM 最终确认值）、`PENDING`/`RELEASED`、生成/释放时间、释放流水引用。 | 多对一 Horse/Owner；一条基础应收对应一条赛果。 | 全员可读；创建、释放、受控调整仅 GM/server。 |
-| `prize_receivable_adjustments` | 原始应收、GM 确认的调整金额、调整原因、关联赛果修正、处理状态、释放/修正流水引用和时间戳。 | 多对一基础应收；用于已生成或已释放奖金后的受控调整。 | 全员可读；仅 GM/server 追加。 |
+| `prize_receivables` | 不可变 `race_result_id`、Horse、**Confirmed Entry Owner 快照**、`amount bigint`、`PENDING`/`CANCELLED`、生成/取消时间与取消原因。0 赏金也保留一条。 | 与每条 Race Result 一对一；同 Horse/Owner 可有多条历史应收。 | 基础表仅 GM 可读；PLAYER 只经无参数安全 RPC 读取自己的 `PENDING` 行；客户端不得写。 |
+| `prize_receivable_adjustments` | v0.4-E+：原始应收、GM 确认的调整金额、调整原因、关联赛果修正、处理状态、释放/修正流水引用和时间戳。 | 多对一基础应收；用于已释放奖金后的受控调整。 | 未来实现时再定义公开范围；仅 GM/server 追加。 |
 | `retirement_cases` | Horse、申请 Owner、申请时 WP 时间、申请/强制退役原因、GM 确认者与时间、状态、最终奖金释放批次/幂等键、备注。 | 一 Horse 至多一个已确认退役结算。 | Owner 可查看/提交自身马匹的申请；GM 全读写；结算仅 GM/server。 |
 
-`prize_receivables.amount` 是 GM 输入/确认的最终基础金额，而不是由数据库公式自动计算的结果。未来辅助计算只能提供建议。赛果在应收生成后被更正时，不得再次生成基础应收：未释放部分通过受控 `prize_receivable_adjustments` 调整有效待释放额；已释放部分通过关联调整记录的追加 `financial_transactions` 修正。两种路径都必须审计且可幂等重试。
+`prize_receivables.amount` 在 v0.4-D 等于 GM 已确认的 `race_results.prize_amount`，不由数据库公式计算。触发器从 `race_results → confirmed_race_entries` 派生 Horse 与 Owner，绝不从 `horses.owner_id` 动态取奖金归属。未释放的 `PENDING` 应收随真实 Prize 更正同步金额；VOID 时改为 `CANCELLED` 而不删除；新 Result 使用新 UUID 形成新应收。v0.4-E 引入 `RELEASED` 后，已释放金额的赛果更正/作废必须通过关联调整与追加 `financial_transactions` 修正，不能改写或重复释放历史流水。
 
 冻结资金不是 `financial_transactions`。它应从当前有效秘密报价与当前公开拍卖最高有效报价计算，或保存在严格受控、可从报价重建的投影中。账户资金、可用资金、待释放奖金、总资产同样应动态计算，避免双写余额。正常 PLAYER 业务操作必须拒绝会使账户资金或可用资金为负的请求；金额使用 `bigint` 整数游戏资金单位。
 
@@ -143,7 +143,7 @@ Race Results v0.4-C 已确定三层事实：`confirmed_race_entries` 是赛前�
 | WP 时间字段、现实时间戳、GM 决定与备注 | 账户资金 = 初始资金 + 正式流水合计 |
 | 庭先 Lot/询问/报价的当前状态及历史、最终成交 | 当前冻结 = 当前有效秘密报价 + 当前公开拍卖当前 Round 赢家报价 |
 | 公开拍卖 Lot、Round、五条独立评分、追加式竞价、服务器期限、最终成交/流拍和 rollback 申请 | 可用资金 = 账户资金 − 当前冻结 |
-| 报名意图、确认赛程、实际比赛、赛果、伤病、GM 最终体力记录 | 待释放奖金 = 基础 `PENDING` 应收款与未处理调整的有效金额合计；总资产 = 账户资金 + 待释放奖金 |
+| 报名意图、确认赛程、实际比赛、赛果、伤病、GM 最终体力记录 | 待释放奖金 = `PENDING` Prize Receivable 金额合计（调整/释放属于 v0.4-E+）；总资产 = 账户资金 + 待释放奖金 |
 | Prize Receivable、奖金调整、正式 Financial Transaction、退役结算状态 | 是否达到 G1 九胜等可从确认赛果计算的提示条件 |
 | 审计日志 | |
 
@@ -155,7 +155,7 @@ Race Results v0.4-C 已确定三层事实：`confirmed_race_entries` 是赛前�
 
 ### PLAYER 数据访问
 
-PLAYER 必须绑定 Owner，且可读全部 Horse、Owner、比赛、公开拍卖状态、奖金应收和 Owner 公开资金汇总；可读写自身 Owner 的尚未处理意图（如报名、庭先询问、秘密报价的受控操作）。公开拍卖为公开竞价：PLAYER 可读当前 Event/Lot/评分/当前 Round 已接受 Bid/当前价/赢家/期限及安全最终结果，但不能直接写任何拍卖基础表，也不能读取 rollback 申请、原因、旧 `VOIDED` Round 或内部 Settlement。除庭先秘密报价和庭先私密 GM 评价外，v0.1 不设置玩家之间的 Owner 数据隔离。
+PLAYER 必须绑定 Owner，且可读全部 Horse、Owner、比赛、公开拍卖状态和 Owner 公开资金汇总；可读写自身 Owner 的尚未处理意图（如报名、庭先询问、秘密报价的受控操作）。奖金应收基础表不是公开表：PLAYER 仅可通过不接受 Owner 参数的安全 RPC 读取自己 Owner 的 `PENDING` Prize Receivable，不能看到其他 Owner、`CANCELLED`/VOID 历史或取消原因。公开拍卖为公开竞价：PLAYER 可读当前 Event/Lot/评分/当前 Round 已接受 Bid/当前价/赢家/期限及安全最终结果，但不能直接写任何拍卖基础表，也不能读取 rollback 申请、原因、旧 `VOIDED` Round 或内部 Settlement。除庭先秘密报价和庭先私密 GM 评价外，v0.1 不设置玩家之间的 Owner 数据隔离。
 
 庭先 `secret_bid_offers`、其历史与 `foal_trade_inquiries` 必须按 `owner_id` 严格隔离，GM 例外。报价阶段完全秘密：列表计数、聚合、报错、审计、Realtime channel 和关联查询都必须遵循相同隔离，避免旁路泄漏。GM 确认结算后，所有 PLAYER 仅可通过安全公开投影读取最终成交 Owner 与最终成交价格；失败报价、报价历史、推荐与 override 内部资料继续隔离。公开资金汇总不得包含或可反推出当前秘密报价、秘密报价冻结或可用资金；逐笔 `financial_transactions` 的公开范围仍待产品确认。
 
@@ -165,7 +165,7 @@ GM 可访问并修正全部业务数据，但涉及结算的写入不应由客�
 
 - 创建/锁定/核对/确认庭先交易，分配所有权和扣款；
 - 展示、开始、关闭、确认或流拍公开 Lot；
-- 赛果、WP 赏金、伤病、退役和奖金应收的 GM 确认/修正；
+- 赛果、WP 赏金、伤病、退役和奖金应收的 GM 确认/修正；其中 v0.4-D 奖金应收只可由赛果 Trigger 同步，GM 不直接改应收；
 - 任何正式资金流水、资金修正和奖金释放；
 - 角色授予、初始资金变更和 Horse 所有权变更；
 - 写入或维护审计记录。
@@ -183,7 +183,7 @@ GM 可访问并修正全部业务数据，但涉及结算的写入不应由客�
 | 公开拍卖 Emergency Rollback | 两阶段锁定申请、Lot/Round/Settlement/Horse/Owner；保留旧历史，成交时追加补偿流水、受控回退 Horse，作废旧 Round 并创建新 Round。 | 每 Settlement 至多成功一次；重复确认无副作用，绝不重复退款或创建新 Round。 |
 | 比赛报名及 GM 确认 | Request 确认锁定 Request/Horse/当前 `game_state`；GM Direct Confirm 只锁定 Horse/当前 `game_state` 并从 Horse 派生 Owner。两者共用 ACTIVE、最终 WP 周伤病、比赛身份和最终周唯一性校验；Request 路径仍保留原请求。 | 同 Request 的相同确认可安全重试；Direct Confirm 的相同最终事实可安全重试；Request 与 Direct 路径不能产生两笔占用同一 Horse/最终 WP 周的确认赛程。 |
 | v0.4-C 赛果 | GM Record 锁定 Confirmed Entry、读取/锁定 Actual Race 与当前 `game_state`，从 Entry 派生 Horse，验证实际周不在未来，再写当前结果与 Audit；Correct/VOID 只改赛后事实并保留历史。 | 同一 Entry 的相同 Record 重试返回原结果；不同事实拒绝并要求 Correct；每 Entry 与每 Horse/Actual Race 至多一个当前结果；VOID 重试不重复 Audit，随后可重新 Record。 |
-| v0.4-D 奖金应收（未来） | GM 确认金额、赛果与基础应收创建要原子化并防止重复；后续赛果更正通过受控调整，不重建基础应收。 | 每个来源赛果的基础应收应有唯一来源约束或幂等键；每项调整亦需唯一来源/幂等键。 |
+| v0.4-D 奖金应收 | Race Result Trigger 在同一事务创建/同步应收；Owner 从 Confirmed Entry 快照派生，0 金额也一对一保留。金额更正更新同一 `PENDING` 行，VOID 改为 `CANCELLED`，重新 Record 创建新来源应收。 | `UNIQUE(race_result_id)`；Record/VOID 幂等不重复创建/取消或审计；Correct 与 VOID 都锁 Result，最终 Result/Receivable 状态必须一致。 |
 | 退役与奖金释放 | 锁定 Horse/退役案，找到其全部有效 `PENDING` 应收和调整，生成对应正式流水，标记已释放，记录审计。 | 重试不得使任一基础应收或调整二次释放或写入重复流水。 |
 | 财务修正 | 追加修正流水与审计，而非改历史余额。 | 修正来源或幂等键应防止重复记账。 |
 
@@ -204,7 +204,7 @@ GM 可访问并修正全部业务数据，但涉及结算的写入不应由客�
 - `public_auction_settlements` 的成交 Owner/Horse/Round/金额必须与当前赢家一致；受控 Horse guard 仅允许对应 Settlement 的 `NULL → Owner/OWNED_FOAL`，以及对应已执行 rollback 的反向回退。
 - `confirmed_race_entries`：同一 Horse、同一最终 WP 年/月/周至多一笔；`request_id` 可空以支持 GM Direct Confirm，有值时必须唯一并与 PENDING Request 的 Horse/Owner 匹配；CONFIRMED Request 必须恰有一条匹配 Entry。PENDING、REJECTED、WITHDRAWN Request 不占用最终周唯一性。固定 Catalog 默认月/周不约束 Confirmed Entry 的最终时间。固定比赛使用 Catalog 引用；`MAIDEN`、`CONDITION`、`OTHER` 必须保存非空 label。
 - 每条 `race_results` 必须归属一场 `actual_races` 且必填 `confirmed_race_entry_id`；其 Horse 必须等于该 Entry Horse。赛前计划与实际比赛身份/时间不要求相同。Catalog Actual Race 的 `(wp_year, wp_month, wp_week, race_catalog_id)` 至多一条；非 Catalog 不设过强自然唯一。每 Entry 与每 Horse/Actual Race 均至多一条当前 `CONFIRMED` Result；名次不唯一以允许并列。VOIDED 历史永久保留且不经公开投影显示。
-- 同一来源赛果不得重复生成基础 `prize_receivable`；奖金调整必须引用其基础应收；已释放基础应收或调整均须有且只有一次对应正式流水或修正流水。
+- 同一来源赛果必须有且只有一个基础 `prize_receivable`，并与 Result 的 Horse、Confirmed Entry Owner、金额和 `CONFIRMED/PENDING`、`VOIDED/CANCELLED` 状态严格一致；`CANCELLED` 不得回到 `PENDING`。未来奖金调整必须引用其基础应收；已释放基础应收或调整均须有且只有一次对应正式流水或修正流水。
 - Horse 已拥有 Owner 后，不允许常规所有权转让；成交结算与退役奖金释放必须使用受控操作。
 
 ## Open Questions

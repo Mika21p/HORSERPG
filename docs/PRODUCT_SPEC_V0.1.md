@@ -98,7 +98,7 @@ FOAL → OWNED_FOAL → TRAINING → ACTIVE → RETIRE_PENDING → RETIRED → B
 | 账户资金 | `initial_funds` 加上已真正入账的 `financial_transactions`。 |
 | 拍卖冻结资金 | Owner 当前全部庭先有效秘密报价，加上公开拍卖当前 Round 最高报价所占用的金额。公开 Round 在 `BIDDING` 或已关闭但尚未最终结算时继续冻结；被超价、作废为历史 Round 或已结算的报价不冻结。冻结不产生真实扣款流水。 |
 | 可用资金 | 账户资金减去拍卖冻结资金。有效报价的总冻结额不得超过可用账户资金。 |
-| 待释放奖金 | 比赛取得并折算完成、但因马匹尚未退役而不能使用的奖金。 |
+| 待释放奖金 | 每条当前有效 Race Result 自动形成的 `PENDING` Prize Receivable 合计；它是尚未释放、暂不可使用的应收事实。 |
 | 总资产 | 账户资金加待释放奖金；不计入马匹评价价值。 |
 
 比赛奖金只会在相关 Horse 退役并完成结算后进入账户资金。资金纠错优先新增修正流水，不直接改写历史余额。
@@ -184,7 +184,7 @@ GM 在 WP 内实际操作比赛，网站不与 WP 自动同步。`confirmed_race
 
 固定比赛的实际赛果创建时必须从 `race_catalog` 复制比赛名称与 Grade 到 `actual_races` 作为历史快照；之后目录改名或停用不得改变过去比赛。非固定比赛使用 GM 填写的非空比赛名，不关联 Catalog，且 Grade 为 NULL。赛果由 GM 受控录入、修正或作废：同一确认赛程同一时间只有一个有效赛果；重复录入完全相同事实返回原赛果，不同事实必须走更正流程；作废保留历史并允许重新录入。基础表和 GM 备注不对 PLAYER 公开，PLAYER 仅通过不含操作者、GM Note 与作废历史的安全公开投影读取当前有效赛果。
 
-`race_results.prize_amount` 是 GM 从 WP 输入的最终**赛果事实**，金额使用 `bigint`，可为 0，当前不生成 `financial_transactions`、不改变 Owner 资金、也不创建 Prize Receivable。v0.4-D 奖金模块部署后，必须扩展赛果更正与作废流程，对已生成的应收采用受控调整，避免重复入账。
+`race_results.prize_amount` 是 GM 从 WP 输入的最终**赛果赏金事实**，金额使用 `bigint`，可为 0。v0.4-D 中，每条 Race Result 在同一数据库事务内自动对应一条 Prize Receivable：`CONFIRMED → PENDING`，`VOIDED → CANCELLED`；相同 Record 重试不重复创建，应收金额随真实的赛果金额更正更新。它仍不生成 `financial_transactions`，不改变 Owner 账户资金、可用资金或拍卖冻结。
 
 系统可从当前有效赛果动态统计 Horse 的出赛次数、胜场、亚军、季军、G1 胜场、总 WP 赏金和主要胜鞍；这些统计不得作为 Horse 的手工维护字段。
 
@@ -194,7 +194,9 @@ GM 在 WP 内实际操作比赛，网站不与 WP 自动同步。`confirmed_race
 
 ## 10. 奖金与退役
 
-v0.4-D 将在 GM 依据赛果输入或确认最终 Prize Receivable 金额后，创建状态为 `PENDING` 的 Prize Receivable，计入 Owner 待释放奖金而不进入可用资金。网站未来可提供折算辅助，但 `prize_receivables.amount` 不要求由数据库按固定公式自动计算；它不等同于当前已记录但尚未入账的 `race_results.prize_amount`。
+v0.4-D 已建立 `Race Result → Prize Receivable` 的一对一应收事实：`prize_receivables.amount` 直接等于 GM 已确认的 `race_results.prize_amount`（不使用固定公式，0 赏金也保留应收记录）。`PENDING` 计入待释放奖金而不进入账户资金或可用资金；作废赛果对应的应收保留为 `CANCELLED`，不向 PLAYER 公开。奖金归属取自比赛时 `confirmed_race_entries.owner_id` 快照，而不是可在未来变化的 `horses.owner_id`。
+
+v0.4-E 才会加入 `RELEASED`、退役结算与正式 Financial Transaction。届时必须以 `prize_receivables.owner_id` 作为收款人；对于已释放奖金的赛果更正或作废，必须以受控补差/冲销流水处理，不能改写历史流水或重复发放。
 
 Horse 退役后，属于该 Horse 的全部 `PENDING` Prize Receivable 一次性释放：生成正式 Financial Transaction，并将状态变更为 `RELEASED`。该流程必须防止重复退役结算导致奖金重复到账。赛果在已产生奖金应收或奖金已释放后被修正时，必须通过受控调整处理，不能再次生成或释放重复奖金。
 
