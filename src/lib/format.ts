@@ -95,6 +95,28 @@ export function formatRaceKind(kind: string | null | undefined) {
   return kind ? labels[kind] ?? kind : "—";
 }
 
+export function formatRaceGrade(grade: string | null | undefined) {
+  return grade || "未分级";
+}
+
+export function formatHorseName(horse: {
+  translated_name?: string | null;
+  foal_name?: string | null;
+  horse_number?: number | string | null;
+} | null | undefined) {
+  if (!horse) return "Horse";
+  return horse.translated_name || horse.foal_name || (horse.horse_number ? `Horse #${horse.horse_number}` : "Horse");
+}
+
+export function formatRaceResultStatus(status: string | null | undefined) {
+  const labels: Record<string, string> = {
+    CONFIRMED: "有效赛果",
+    VOIDED: "已作废",
+  };
+
+  return status ? labels[status] ?? status : "—";
+}
+
 export function formatRaceEntryRequestStatus(status: string | null | undefined) {
   const labels: Record<string, string> = {
     PENDING: "等待 GM 审核",

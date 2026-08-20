@@ -32,10 +32,18 @@ export function AppShell({ children, email, isGM }: AppShellProps) {
             <Link className="hover:text-amber-200" href="/races">
               比赛 / Race
             </Link>
+            <Link className="hover:text-amber-200" href="/results">
+              赛果
+            </Link>
             {isGM && (
-              <Link className="hover:text-amber-200" href="/admin">
-                GM 后台
-              </Link>
+              <>
+                <Link className="hover:text-amber-200" href="/admin/race-results">
+                  赛果管理
+                </Link>
+                <Link className="hover:text-amber-200" href="/admin">
+                  GM 后台
+                </Link>
+              </>
             )}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-xs text-stone-400 sm:ml-0">
