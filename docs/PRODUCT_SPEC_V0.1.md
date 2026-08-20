@@ -184,7 +184,7 @@ GM 在 WP 内实际操作比赛，网站不与 WP 自动同步。`confirmed_race
 
 固定比赛的实际赛果创建时必须从 `race_catalog` 复制比赛名称与 Grade 到 `actual_races` 作为历史快照；之后目录改名或停用不得改变过去比赛。非固定比赛使用 GM 填写的非空比赛名，不关联 Catalog，且 Grade 为 NULL。赛果由 GM 受控录入、修正或作废：同一确认赛程同一时间只有一个有效赛果；重复录入完全相同事实返回原赛果，不同事实必须走更正流程；作废保留历史并允许重新录入。基础表和 GM 备注不对 PLAYER 公开，PLAYER 仅通过不含操作者、GM Note 与作废历史的安全公开投影读取当前有效赛果。
 
-`race_results.prize_amount` 是 GM 从 WP 输入的最终**赛果赏金事实**，金额使用 `bigint`，可为 0。v0.4-D 中，每条 Race Result 在同一数据库事务内自动对应一条 Prize Receivable：`CONFIRMED → PENDING`，`VOIDED → CANCELLED`；相同 Record 重试不重复创建，应收金额随真实的赛果金额更正更新。它仍不生成 `financial_transactions`，不改变 Owner 账户资金、可用资金或拍卖冻结。
+`race_results.prize_amount` 是 GM 从 WP 输入的最终**赛果赏金事实**，金额使用 `bigint`，可为 0。每条 Race Result 在同一数据库事务内自动对应一条 Prize Receivable：有效赛果先为 `PENDING`，退役时或 Horse 已退役后的补录赛果会变为 `RELEASED`，作废后保留为 `CANCELLED`；相同 Record 重试不重复创建。应收金额随真实赛果金额更正：`PENDING` 直接同步金额，`RELEASED` 则只通过追加奖金差额流水修正，绝不改写历史流水。
 
 系统可从当前有效赛果动态统计 Horse 的出赛次数、胜场、亚军、季军、G1 胜场、总 WP 赏金和主要胜鞍；这些统计不得作为 Horse 的手工维护字段。
 
@@ -194,13 +194,13 @@ GM 在 WP 内实际操作比赛，网站不与 WP 自动同步。`confirmed_race
 
 ## 10. 奖金与退役
 
-v0.4-D 已建立 `Race Result → Prize Receivable` 的一对一应收事实：`prize_receivables.amount` 直接等于 GM 已确认的 `race_results.prize_amount`（不使用固定公式，0 赏金也保留应收记录）。`PENDING` 计入待释放奖金而不进入账户资金或可用资金；作废赛果对应的应收保留为 `CANCELLED`，不向 PLAYER 公开。奖金归属取自比赛时 `confirmed_race_entries.owner_id` 快照，而不是可在未来变化的 `horses.owner_id`。
+`Race Result → Prize Receivable` 是一对一的奖金事实，`prize_receivables.amount` 直接等于 GM 已确认的 `race_results.prize_amount`，不使用固定公式，0 赏金也保留记录。奖金归属固定取自比赛时 `confirmed_race_entries.owner_id` 快照，绝不从可变化的 `horses.owner_id` 重新推导。
 
-v0.4-E 才会加入 `RELEASED`、退役结算与正式 Financial Transaction。届时必须以 `prize_receivables.owner_id` 作为收款人；对于已释放奖金的赛果更正或作废，必须以受控补差/冲销流水处理，不能改写历史流水或重复发放。
+奖金生命周期为：`PENDING → RELEASED → CANCELLED`（已释放后赛果作废），或 `PENDING → CANCELLED`（释放前作废）。`PENDING` 计入待释放奖金而不进入账户资金或可用资金；`RELEASED` 通过正式追加式 `financial_transactions` 进入对应 Owner 的账户。每笔首次 Release、后续金额更正和作废冲销均由追加式 `prize_receivable_ledger_entries` 稳定关联：首次 Release 为正数；已释放奖金上调/下调写正/负差额；作废写当前金额的负数冲销。0 金额 Release/冲销保留账务关联事实但不创建无意义的 0 金额正式流水。历史流水永不 UPDATE 或 DELETE。
 
-Horse 退役后，属于该 Horse 的全部 `PENDING` Prize Receivable 一次性释放：生成正式 Financial Transaction，并将状态变更为 `RELEASED`。该流程必须防止重复退役结算导致奖金重复到账。赛果在已产生奖金应收或奖金已释放后被修正时，必须通过受控调整处理，不能再次生成或释放重复奖金。
+Horse 退役使用私有 `horse_retirement_requests`：PLAYER 只能为自己当前拥有、处于 `ACTIVE` 且按当前 WP 年计算已满 3 岁的 Horse 提交 `OWNER_REQUEST`；同一请求同备注可安全重试，PENDING 期间 Horse 进入 `RETIRE_PENDING`，PLAYER 可撤回。GM 可因当前有效 G1 冠军达到 9 场建立 `G1_LIMIT`，或以非空理由建立 `WP_LIFESPAN` 强制退役案；GM 也可拒绝 PENDING 案件。每 Horse 最多一个 PENDING 和一个 CONFIRMED 退役案。
 
-主动退役在 Horse 满 3 岁后由 Owner 向 GM 提出，GM 最终确认。强制退役包括 WP 游戏内寿命过低时由 GM 年末执行，或 G1 胜利达到 9 次。网站可提示条件已满足，但不得自动替 GM 退役。退役后 Horse 操作权归 GM；繁殖系统不属于 v0.1 主要开发范围。
+GM Confirm 前必须拒绝仍有晚于当前 `game_state` 的已确认赛程；本阶段不自动删除、作废或修改该赛程。Confirm 在同一事务中确认案件、将 Horse `RETIRE_PENDING → RETIRED`、按每条应收自己的 `owner_id` 释放全部 PENDING 奖金并写 Audit。重试只返回既有 CONFIRMED 事实，不会重复入账或审计。Horse 退役后补录或重录赛果时，新应收在同一事务立即 Release；因此任一提交完成后不得存在 `RETIRED Horse + PENDING Prize Receivable`。本阶段不自动改变 Owner 或进入 `BREEDING`。
 
 ## 11. 审计、修正与操作权限
 
@@ -217,6 +217,5 @@ GM 对以下关键变更必须留下 Audit Log：资金、比赛结果、WP 赏�
 以下事项在当前规则中仍缺少足以直接实现校验、RLS 或用户行为的定义，需产品方确认：
 
 1. 公开资金汇总的确切对外展示字段（不得反推秘密报价/冻结），以及逐笔 `financial_transactions` 是否公开。
-2. `initial_funds` 的设定与变更流程，以及经 GM 审计的纠错是否允许使账户资金为负；常规 PLAYER 操作已确定不得导致负数。
-3. “主要胜鞍”、特殊跑法、满 3 岁、寿命过低与 G1 九胜触发后的精确判定和系统动作。
-4. 生命周期允许的完整跳转，特别是 `RETIRED → BREEDING` 是否必经，以及除公开拍卖流拍外哪些情况可以进入 `DISCARDED`。
+2. “主要胜鞍”、特殊跑法的精确判定与系统动作。
+3. 生命周期允许的完整跳转，特别是 `RETIRED → BREEDING` 是否必经，以及除公开拍卖流拍外哪些情况可以进入 `DISCARDED`。
