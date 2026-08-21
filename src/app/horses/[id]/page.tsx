@@ -1,14 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { submitHorseRetirementRequest, withdrawHorseRetirementRequest } from "@/app/retirement/actions";
+import { ActionForm } from "@/components/action-form";
 import { AppShell } from "@/components/app-shell";
+import { Notice } from "@/components/notice";
 import { requireUser } from "@/lib/auth/session";
-import { formatGameMoney, formatRaceGrade, formatWpTime } from "@/lib/format";
+import { formatDateTime, formatGameMoney, formatHorseLifeStage, formatRaceGrade, formatWpTime } from "@/lib/format";
 
-type PageProps = { params: Promise<{ id: string }> };
+type PageProps = { params: Promise<{ id: string }>; searchParams: Promise<{ notice?: string }> };
 
-export default async function HorsePage({ params }: PageProps) {
-  const [{ id }, { supabase, user, profile }] = await Promise.all([params, requireUser()]);
+type PrizeReceivable = {
+  horse_id: string;
+  amount: string | number | bigint;
+};
+
+function sumMoney(rows: PrizeReceivable[]) {
+  return rows.reduce((total, row) => total + BigInt(row.amount), BigInt(0));
+}
+
+export default async function HorsePage({ params, searchParams }: PageProps) {
+  const [{ id }, { notice }, { supabase, user, profile }] = await Promise.all([params, searchParams, requireUser()]);
   const [{ data: horse }, { data: factors }, { data: publicResults }] = await Promise.all([
     supabase.from("horses").select("*").eq("id", id).maybeSingle(),
     supabase.from("horse_factors").select("factor_kind, factor_name").eq("horse_id", id).order("created_at"),
@@ -20,6 +32,30 @@ export default async function HorsePage({ params }: PageProps) {
     ? await supabase.from("owners").select("id, display_name").eq("id", horse.owner_id).maybeSingle()
     : { data: null };
 
+  const isOwnPlayerHorse = profile?.role === "PLAYER" && profile.owner_id === horse.owner_id;
+  const [{ data: gameState }, { data: retirementRequests }, { data: rawPrizes, error: prizeError }] = await Promise.all([
+    supabase.from("game_state").select("current_wp_year, current_wp_month, current_wp_week").maybeSingle(),
+    isOwnPlayerHorse
+      ? supabase
+        .from("horse_retirement_requests")
+        .select("id, request_kind, status, player_note, gm_reason, requested_at")
+        .eq("horse_id", horse.id)
+        .order("requested_at", { ascending: false })
+      : Promise.resolve({ data: [] }),
+    isOwnPlayerHorse
+      ? supabase.rpc("get_current_owner_prize_receivables")
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const retirementRequest = retirementRequests?.[0] ?? null;
+  const ownPrizes = ((Array.isArray(rawPrizes) ? rawPrizes : []) as PrizeReceivable[]).filter((prize) => prize.horse_id === horse.id);
+  const pendingPrize = sumMoney(ownPrizes);
+  const wpAge = gameState ? gameState.current_wp_year - horse.birth_year : null;
+  const canSubmitRetirement = isOwnPlayerHorse && horse.life_stage === "ACTIVE" && wpAge !== null && wpAge >= 3;
+  const submitRetirement = submitHorseRetirementRequest.bind(null, horse.id);
+  const withdrawRetirement = retirementRequest
+    ? withdrawHorseRetirementRequest.bind(null, horse.id, retirementRequest.id, `/horses/${horse.id}`)
+    : null;
+
   const fields = [
     ["马号", horse.horse_number],
     ["出生年", horse.birth_year],
@@ -30,7 +66,7 @@ export default async function HorsePage({ params }: PageProps) {
     ["母父", horse.broodmare_sire_name],
     ["骑手", horse.current_jockey_name ?? "—"],
     ["调教师", horse.current_trainer_name ?? "—"],
-    ["生命周期", horse.life_stage],
+    ["生命周期", formatHorseLifeStage(horse.life_stage)],
     ["Owner", owner?.display_name ?? "未归属"],
   ];
   const results = publicResults ?? [];
@@ -42,6 +78,7 @@ export default async function HorsePage({ params }: PageProps) {
     <AppShell email={user.email} isGM={profile?.role === "GM"}>
       <main className="mx-auto w-full max-w-4xl px-6 py-10">
         <Link className="text-sm text-amber-200 hover:text-amber-100" href="/horses">← Horses</Link>
+        <Notice message={notice} />
         <section className="mt-5 rounded-xl border border-stone-800 bg-stone-900 p-7">
           <p className="text-sm font-semibold tracking-[0.18em] text-amber-300">HORSE #{horse.horse_number}</p>
           <h1 className="mt-3 text-3xl font-semibold">{horse.translated_name || horse.foal_name}</h1>
@@ -63,6 +100,23 @@ export default async function HorsePage({ params }: PageProps) {
             {g1Wins.length > 0 && <div className="mt-6"><h3 className="text-sm font-semibold text-amber-100">G1 胜鞍</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">{g1Wins.map((result) => <article className="rounded-lg border border-amber-300/25 bg-amber-300/5 p-4" key={result.race_result_id}><p className="font-medium text-stone-100">{result.race_name}</p><p className="mt-1 text-sm text-stone-400">{formatWpTime(result.wp_year, result.wp_month, result.wp_week)} · {formatRaceGrade(result.grade)}</p></article>)}</div></div>}
             <div className="mt-6 space-y-3">{results.map((result) => <article className="rounded-lg border border-stone-800 bg-stone-950/50 p-4" key={result.race_result_id}><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-medium text-stone-100">{result.race_name} {result.grade && <span className="ml-2 text-xs text-amber-100">{formatRaceGrade(result.grade)}</span>}</p><p className="mt-1 text-sm text-stone-400">{formatWpTime(result.wp_year, result.wp_month, result.wp_week)} · 骑手：{result.actual_jockey || "未指定"} · 跑法：{result.actual_running_style || "未指定"}</p></div><p className="font-semibold text-amber-100">{result.finish_position} 着 · {formatGameMoney(result.prize_amount)}</p></div></article>)}{!results.length && <p className="rounded-lg border border-stone-800 bg-stone-950/60 p-5 text-sm text-stone-500">暂无正式比赛记录。</p>}</div>
           </div>
+          {isOwnPlayerHorse && (
+            <div className="mt-8 border-t border-stone-800 pt-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="font-semibold text-amber-200">退役申请</h2>
+                  <p className="mt-2 text-sm leading-6 text-stone-400">当前状态：<span className="font-medium text-stone-200">{formatHorseLifeStage(horse.life_stage)}</span>。主动申请只会让 Horse 进入退役处理中；GM 确认前不会退役、不会释放待释放奖金，也不会开启繁殖。</p>
+                </div>
+                <Link className="w-fit text-sm text-amber-200 hover:text-amber-100" href="/retirement">查看我的退役与奖金 →</Link>
+              </div>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <div className="rounded-lg border border-stone-800 bg-stone-950/60 p-4"><p className="text-xs text-stone-500">当前 WP 年龄</p><p className="mt-2 text-xl font-semibold text-stone-100">{wpAge === null ? "尚未初始化" : `${wpAge} 岁`}</p></div>
+                <div className="rounded-lg border border-stone-800 bg-stone-950/60 p-4"><p className="text-xs text-stone-500">此 Horse 的待释放奖金</p><p className="mt-2 break-all font-mono text-xl font-semibold text-amber-100">{formatGameMoney(pendingPrize)}</p><p className="mt-2 text-xs leading-5 text-stone-500">不计入账户资金或可用资金。</p></div>
+              </div>
+              {prizeError && <p className="mt-4 rounded-lg border border-red-400/30 bg-red-400/5 p-3 text-sm text-red-100">待释放奖金暂时无法读取，请刷新后重试。</p>}
+              {horse.life_stage === "RETIRE_PENDING" ? <div className="mt-5 rounded-lg border border-amber-300/35 bg-amber-300/5 p-4"><p className="font-medium text-amber-100">已有退役申请处理中</p>{retirementRequest ? <><p className="mt-2 text-sm text-stone-400">提交于 {formatDateTime(retirementRequest.requested_at)}。GM 审核期间不能新建已确认赛程。</p>{retirementRequest.request_kind === "OWNER_REQUEST" && withdrawRetirement && <ActionForm action={withdrawRetirement} className="mt-4" confirmation="确定撤回这条退役申请吗？Horse 将恢复为现役，GM 审核流程会停止。" pendingLabel="正在撤回…" submitLabel="撤回退役申请" variant="secondary" />}</> : <p className="mt-2 text-sm text-amber-100">申请记录暂时无法读取，请刷新后重试。</p>}</div> : horse.life_stage === "RETIRED" ? pendingPrize > BigInt(0) ? <p className="mt-5 rounded-lg border border-red-400/35 bg-red-400/5 p-4 text-sm leading-6 text-red-100">数据异常：该 Horse 已退役但仍显示待释放奖金。页面不会自行修正，请联系 GM 处理。</p> : <p className="mt-5 rounded-lg border border-emerald-400/30 bg-emerald-400/5 p-4 text-sm text-emerald-100">该 Horse 已退役，当前没有待释放奖金。</p> : !gameState ? <p className="mt-5 rounded-lg border border-amber-300/30 bg-amber-300/5 p-4 text-sm text-amber-100">GM 尚未设置 Game State，暂时不能提交退役申请。</p> : horse.life_stage !== "ACTIVE" ? <p className="mt-5 rounded-lg border border-stone-700 bg-stone-950/60 p-4 text-sm text-stone-400">该 Horse 当前不是 ACTIVE，不能主动申请退役。</p> : wpAge !== null && wpAge < 3 ? <p className="mt-5 rounded-lg border border-stone-700 bg-stone-950/60 p-4 text-sm text-stone-400">3岁起可主动申请退役。</p> : canSubmitRetirement ? <ActionForm action={submitRetirement} className="mt-5 rounded-lg border border-amber-300/30 bg-amber-300/5 p-4" confirmation="确认提交退役申请吗？提交后 Horse 会进入退役处理中，并阻止新的已确认赛程；这不会立即退役或释放奖金。" pendingLabel="正在提交…" submitLabel="提交退役申请"><input name="return_path" type="hidden" value={`/horses/${horse.id}`} /><label className="admin-label">Player Note（可选）<textarea className="admin-input min-h-24" name="player_note" placeholder="例如：希望本季结束后退役" /></label></ActionForm> : null}
+            </div>
+          )}
         </section>
       </main>
     </AppShell>

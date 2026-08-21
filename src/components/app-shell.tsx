@@ -35,6 +35,11 @@ export function AppShell({ children, email, isGM }: AppShellProps) {
             <Link className="hover:text-amber-200" href="/results">
               赛果
             </Link>
+            {!isGM && (
+              <Link className="hover:text-amber-200" href="/retirement">
+                退役与奖金
+              </Link>
+            )}
             {isGM && (
               <>
                 <Link className="hover:text-amber-200" href="/admin/race-results">

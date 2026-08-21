@@ -127,3 +127,49 @@ export function formatRaceEntryRequestStatus(status: string | null | undefined) 
 
   return status ? labels[status] ?? status : "—";
 }
+
+export function formatHorseLifeStage(stage: string | null | undefined) {
+  const labels: Record<string, string> = {
+    FOAL: "幼驹",
+    OWNED_FOAL: "已归属幼驹",
+    TRAINING: "训练中",
+    ACTIVE: "现役",
+    RETIRE_PENDING: "退役处理中",
+    RETIRED: "已退役",
+    BREEDING: "繁殖中",
+    DISCARDED: "已弃置",
+  };
+
+  return stage ? labels[stage] ?? stage : "—";
+}
+
+export function formatHorseRetirementRequestKind(kind: string | null | undefined) {
+  const labels: Record<string, string> = {
+    OWNER_REQUEST: "Owner 主动申请",
+    G1_LIMIT: "G1 九胜退役",
+    WP_LIFESPAN: "WP 寿命裁定",
+  };
+
+  return kind ? labels[kind] ?? kind : "—";
+}
+
+export function formatHorseRetirementRequestStatus(status: string | null | undefined) {
+  const labels: Record<string, string> = {
+    PENDING: "等待 GM 审核",
+    CONFIRMED: "已确认退役",
+    REJECTED: "已拒绝",
+    WITHDRAWN: "已撤回",
+  };
+
+  return status ? labels[status] ?? status : "—";
+}
+
+export function formatPrizeReceivableLedgerEntryKind(kind: string | null | undefined) {
+  const labels: Record<string, string> = {
+    RELEASE: "奖金释放",
+    CORRECTION_ADJUSTMENT: "奖金纠错冲减",
+    VOID_REVERSAL: "赛果作废冲回",
+  };
+
+  return kind ? labels[kind] ?? kind : "—";
+}
