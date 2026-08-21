@@ -249,6 +249,7 @@ function getHorsePayload(formData: FormData) {
     coat_color: coatColor,
     sire_name: sireName,
     sire_line: sireLine,
+    dam_name: optionalText(formData, "dam_name"),
     broodmare_sire_name: broodmareSireName,
     current_jockey_name: optionalText(formData, "current_jockey_name"),
     current_trainer_name: optionalText(formData, "current_trainer_name"),

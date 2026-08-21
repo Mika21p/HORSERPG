@@ -9,6 +9,7 @@ const links = [
   ["公开拍卖", "/admin/public-auction", "主持年末公开拍卖、公开竞价与受控回滚"],
   ["比赛管理", "/admin/races", "审核 PLAYER 报名、安排赛程并维护比赛目录"],
   ["退役与奖金结算", "/admin/retirement", "审核退役申请、释放待释放奖金并查看仅 GM 可见的账本历史"],
+  ["繁育与幼驹录入", "/admin/breeding", "管理内部繁育候选、外部血统资料，并录入 WP 已出生幼驹"],
 ] as const;
 
 export default function AdminHomePage() {

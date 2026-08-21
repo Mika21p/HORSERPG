@@ -45,6 +45,9 @@ export function AppShell({ children, email, isGM }: AppShellProps) {
                 <Link className="hover:text-amber-200" href="/admin/race-results">
                   赛果管理
                 </Link>
+                <Link className="hover:text-amber-200" href="/admin/breeding">
+                  繁育管理
+                </Link>
                 <Link className="hover:text-amber-200" href="/admin">
                   GM 后台
                 </Link>

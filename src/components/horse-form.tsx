@@ -13,7 +13,10 @@ type HorseValues = {
   coat_color: string;
   sire_name: string;
   sire_line: string;
+  dam_name?: string | null;
   broodmare_sire_name: string;
+  sire_parent_source_type?: string | null;
+  dam_parent_source_type?: string | null;
   owner_id: string | null;
   current_jockey_name: string | null;
   current_trainer_name: string | null;
@@ -41,6 +44,7 @@ export function HorseForm({ action, horse, owners }: HorseFormProps) {
   const assignedOwner = horse?.owner_id
     ? owners.find((owner) => owner.id === horse.owner_id)
     : null;
+  const hasStructuredPedigree = Boolean(horse?.sire_parent_source_type || horse?.dam_parent_source_type);
 
   return (
     <form action={action} className="space-y-7">
@@ -85,19 +89,24 @@ export function HorseForm({ action, horse, owners }: HorseFormProps) {
           </select>
         </label>
       </div>
-      <fieldset className="grid gap-4 border-t border-stone-800 pt-6 sm:grid-cols-3">
-        <legend className="pb-3 text-sm font-semibold text-amber-200">外部血统文本</legend>
+      <fieldset className="grid gap-4 border-t border-stone-800 pt-6 sm:grid-cols-2">
+        <legend className="pb-3 text-sm font-semibold text-amber-200">血统事实</legend>
+        {hasStructuredPedigree && <p className="sm:col-span-2 -mt-1 text-xs leading-5 text-amber-100">这匹 Horse 的结构化血统及快照由受控 Foal 创建流程写入，不能在普通 Horse 编辑中改写。</p>}
         <label className="admin-label" htmlFor="sire_name">
           sire_name
-          <input className="admin-input" defaultValue={horse?.sire_name} id="sire_name" name="sire_name" required />
+          <input className="admin-input" defaultValue={horse?.sire_name} id="sire_name" name="sire_name" readOnly={hasStructuredPedigree} required />
         </label>
         <label className="admin-label" htmlFor="sire_line">
           sire_line
-          <input className="admin-input" defaultValue={horse?.sire_line} id="sire_line" name="sire_line" required />
+          <input className="admin-input" defaultValue={horse?.sire_line} id="sire_line" name="sire_line" readOnly={hasStructuredPedigree} required />
+        </label>
+        <label className="admin-label" htmlFor="dam_name">
+          dam_name
+          <input className="admin-input" defaultValue={horse?.dam_name ?? ""} id="dam_name" name="dam_name" readOnly={hasStructuredPedigree} />
         </label>
         <label className="admin-label" htmlFor="broodmare_sire_name">
           broodmare_sire_name
-          <input className="admin-input" defaultValue={horse?.broodmare_sire_name} id="broodmare_sire_name" name="broodmare_sire_name" required />
+          <input className="admin-input" defaultValue={horse?.broodmare_sire_name} id="broodmare_sire_name" name="broodmare_sire_name" readOnly={hasStructuredPedigree} required />
         </label>
       </fieldset>
       <fieldset className="grid gap-4 border-t border-stone-800 pt-6 sm:grid-cols-2">
