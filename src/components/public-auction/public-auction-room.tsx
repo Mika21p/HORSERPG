@@ -222,7 +222,8 @@ export function PublicAuctionRoom({ eventId, viewerOwnerId, viewerRole }: Public
   const mareFactors = factors.filter((factor) => factor.factor_kind === "MARE");
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-10">
+    <div className="auction-stage min-h-[calc(100vh-4rem)]">
+    <main className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 sm:py-10 xl:px-8">
       <section className="rounded-2xl border border-stone-800 bg-stone-900 p-5 shadow-2xl shadow-black/20 sm:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -272,5 +273,6 @@ export function PublicAuctionRoom({ eventId, viewerOwnerId, viewerRole }: Public
         </div>
       )}
     </main>
+    </div>
   );
 }

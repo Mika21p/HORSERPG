@@ -6,7 +6,9 @@ import {
   rejectHorseRetirementRequest,
 } from "@/app/admin/retirement/actions";
 import { ActionForm } from "@/components/action-form";
+import { GMPageHeader, GMSectionNav } from "@/components/gm-admin-ui";
 import { Notice } from "@/components/notice";
+import { StatusBadge } from "@/components/ui/primitives";
 import { requireGM } from "@/lib/auth/session";
 import {
   formatDateTime,
@@ -123,24 +125,15 @@ export default async function AdminRetirementPage({ searchParams }: PageProps) {
   const eligibleForceHorses = (horses ?? []).filter((horse) => horse.owner_id && horse.life_stage === "ACTIVE");
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
-      <section className="flex flex-col gap-5 border-b border-stone-800 pb-7 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-sm font-semibold tracking-[0.24em] text-amber-300">GM · RETIREMENT & PRIZE RELEASE</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight">退役与奖金结算</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-400">退役确认是高风险、不可逆的受控流程：它会将 Horse 设为已退役，并在同一事务中释放所有待释放奖金。未来已确认赛程必须先按既有流程处理。</p>
-        </div>
-        <div className="rounded-xl border border-amber-300/30 bg-amber-300/5 px-5 py-4 text-sm">
-          <p className="text-stone-500">当前 Winning Post 时间</p>
-          <p className="mt-1 font-semibold text-amber-100">{gameState ? formatWpTime(gameState.current_wp_year, gameState.current_wp_month, gameState.current_wp_week) : "尚未初始化"}</p>
-        </div>
-      </section>
+    <main className="page-wrap">
+      <GMPageHeader action={<StatusBadge tone="warning">{gameState ? formatWpTime(gameState.current_wp_year, gameState.current_wp_month, gameState.current_wp_week) : "时间未初始化"}</StatusBadge>} description="退役确认是高风险、不可逆的受控流程：它会将 Horse 设为已退役，并在同一事务中释放所有待释放奖金。未来已确认赛程必须先按既有流程处理。" eyebrow="RETIREMENT & PRIZE RELEASE" title="退役与奖金结算" />
 
       <Notice message={notice} />
       {dataError && <p className="mt-5 rounded-xl border border-red-400/40 bg-red-400/5 p-4 text-sm leading-6 text-red-100">部分退役或奖金结算资料暂时无法读取。请刷新页面；页面不会显示数据库内部错误。</p>}
+      <GMSectionNav items={[{ count: pendingRequests.length, href: "#pending", label: "待处理" }, { href: "#forced", label: "强制退役" }, { href: "#prizes", label: "奖金摘要" }, { count: historyRequests.length, href: "#history", label: "历史记录" }]} />
 
       <section className="mt-8 grid gap-6 xl:grid-cols-[minmax(19rem,0.8fr)_minmax(0,1.2fr)]">
-        <section className="h-fit rounded-xl border border-stone-800 bg-stone-900 p-6">
+        <section className="scroll-mt-32 h-fit rounded-xl border border-stone-800 bg-stone-900 p-6" id="forced">
           <h2 className="text-xl font-semibold text-amber-200">创建强制退役申请</h2>
           <p className="mt-2 text-sm leading-6 text-stone-400">仅限已有 Owner 且当前 ACTIVE 的 Horse。G1 九胜按当前有效赛果计数；WP 寿命裁定必须填写原因。创建后仍要单独确认退役与奖金结算。</p>
           <ActionForm action={createGmRetirementRequest} className="mt-5 space-y-4" confirmation="确认创建强制退役申请吗？Horse 会进入退役处理中，但不会立刻退役或释放奖金。" pendingLabel="正在创建…" submitLabel="创建强制退役申请">
@@ -163,7 +156,7 @@ export default async function AdminRetirementPage({ searchParams }: PageProps) {
           {!eligibleForceHorses.length && <p className="mt-5 rounded-lg border border-stone-800 bg-stone-950/60 p-4 text-sm text-stone-500">当前没有可用于强制退役申请的 ACTIVE 已归属 Horse。</p>}
         </section>
 
-        <section>
+        <section className="scroll-mt-32" id="pending">
           <div className="flex items-end justify-between gap-4"><div><h2 className="text-xl font-semibold text-amber-200">等待处理的退役申请</h2><p className="mt-2 text-sm text-stone-400">确认前核对 Horse、Owner、未来赛程与每笔奖金应收的历史 Owner。数据库会在最终确认时再次锁定并验证全部事实。</p></div><span className="font-mono text-sm text-stone-500">{pendingRequests.length} 条</span></div>
           <div className="mt-5 space-y-5">
             {pendingRequests.map((request) => {
@@ -197,13 +190,13 @@ export default async function AdminRetirementPage({ searchParams }: PageProps) {
         </section>
       </section>
 
-      <section className="mt-10 border-t border-stone-800 pt-10">
+      <section className="scroll-mt-32 mt-10 border-t border-stone-800 pt-10" id="history">
         <h2 className="text-xl font-semibold text-amber-200">近期完成与历史申请</h2>
         <p className="mt-2 text-sm text-stone-400">包含确认、拒绝与撤回记录。Horse 与 Owner 关系为申请时的历史快照；这里仅限 GM。</p>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">{historyRequests.slice(0, 30).map((request) => { const horse = horseById.get(request.horse_id); return <article className="rounded-xl border border-stone-800 bg-stone-900 p-5" key={request.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-semibold text-stone-100">{formatHorseName(horse)}</p><p className="mt-1 text-sm text-stone-400">{formatHorseRetirementRequestKind(request.request_kind)} · Owner：{ownerNameById.get(request.owner_id) ?? "—"}</p></div><span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${requestStatusClass(request.status)}`}>{formatHorseRetirementRequestStatus(request.status)}</span></div><p className="mt-4 text-sm text-stone-400">提交：{formatDateTime(request.requested_at)} · 完成/处理：{formatDateTime(request.completed_at ?? request.withdrawn_at ?? request.reviewed_at)}</p>{request.player_note && <p className="mt-3 rounded-lg border border-stone-800 bg-stone-950/60 p-3 text-sm leading-6 text-stone-400">PLAYER Note：{request.player_note}</p>}{request.gm_reason && <p className="mt-3 rounded-lg border border-stone-800 bg-stone-950/60 p-3 text-sm leading-6 text-stone-400">GM 原因：{request.gm_reason}</p>}</article>; })}{!historyRequests.length && <p className="rounded-xl border border-stone-800 bg-stone-900 p-6 text-sm text-stone-500">暂无已完成的退役申请。</p>}</div>
       </section>
 
-      <section className="mt-10 border-t border-stone-800 pt-10">
+      <section className="scroll-mt-32 mt-10 border-t border-stone-800 pt-10" id="prizes">
         <h2 className="text-xl font-semibold text-amber-200">奖金账本历史</h2>
         <p className="mt-2 text-sm leading-6 text-stone-400">仅 GM 可见的 append-only 账本投影。奖金释放、已释放奖金纠错与赛果作废冲回均以正式资金流水为依据；这里不提供手工改账能力。</p>
         <div className="mt-5 space-y-3">{((ledgerEntries ?? []) as LedgerEntry[]).slice(0, 50).map((entry) => { const receivable = receivableById.get(entry.prize_receivable_id); const horse = receivable ? horseById.get(receivable.horse_id) : undefined; const request = requestById.get(entry.retirement_request_id); return <article className="rounded-xl border border-stone-800 bg-stone-900 p-5" key={entry.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-semibold text-stone-100">{formatPrizeReceivableLedgerEntryKind(entry.entry_kind)}</p><p className="mt-1 text-sm text-stone-400">{formatHorseName(horse)} · 历史 Owner：{receivable ? ownerNameById.get(receivable.owner_id) ?? "—" : "—"}</p></div><p className={`break-all font-mono text-lg font-semibold ${BigInt(entry.amount_delta) < 0 ? "text-red-200" : "text-emerald-100"}`}>{formatGameMoney(entry.amount_delta)}</p></div><p className="mt-3 text-sm text-stone-400">关联申请：{request ? formatHorseRetirementRequestKind(request.request_kind) : "—"} · {formatDateTime(entry.created_at)}</p>{entry.reason && <p className="mt-3 rounded-lg border border-stone-800 bg-stone-950/60 p-3 text-sm text-stone-400">原因：{entry.reason}</p>}</article>; })}{!(ledgerEntries ?? []).length && <p className="rounded-xl border border-stone-800 bg-stone-900 p-6 text-sm text-stone-500">尚无奖金账本记录。</p>}</div>

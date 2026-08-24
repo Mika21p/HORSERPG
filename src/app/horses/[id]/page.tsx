@@ -6,6 +6,7 @@ import { ActionForm } from "@/components/action-form";
 import { AppShell } from "@/components/app-shell";
 import { HorseHealthPanel, type HealthInjury, type HorseHealthEvent } from "@/components/horse-health-panel";
 import { Notice } from "@/components/notice";
+import { StatusBadge } from "@/components/ui/primitives";
 import { requireUser } from "@/lib/auth/session";
 import { formatDateTime, formatGameMoney, formatHorseLifeStage, formatRaceGrade, formatWpTime } from "@/lib/format";
 
@@ -101,12 +102,13 @@ export default async function HorsePage({ params, searchParams }: PageProps) {
 
   return (
     <AppShell email={user.email} isGM={profile?.role === "GM"}>
-      <main className="mx-auto w-full max-w-4xl px-6 py-10">
-        <Link className="text-sm text-amber-200 hover:text-amber-100" href="/horses">← Horses</Link>
+      <main className="page-wrap">
+        <Link className="inline-flex min-h-11 items-center text-sm font-semibold text-[#7d5b24] hover:text-[#173f35]" href="/horses">← 返回马匹档案</Link>
         <Notice message={notice} />
-        <section className="mt-5 rounded-xl border border-stone-800 bg-stone-900 p-7">
+        <div className="mt-3 grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <section className="rounded-2xl border border-stone-800 bg-stone-900 p-5 shadow-[0_14px_36px_rgb(57_47_31/7%)] sm:p-7">
           <p className="text-sm font-semibold tracking-[0.18em] text-amber-300">HORSE #{horse.horse_number}</p>
-          <h1 className="mt-3 text-3xl font-semibold">{horse.translated_name || horse.foal_name}</h1>
+          <h1 className="display-title mt-3 text-3xl font-semibold text-[#173f35] sm:text-4xl">{horse.translated_name || horse.foal_name}</h1>
           {horse.name_katakana && <p className="mt-2 text-stone-400">{horse.name_katakana}</p>}
           <dl className="mt-8 grid gap-5 sm:grid-cols-2">
             {fields.map(([label, value]) => <div key={label}><dt className="text-xs font-medium tracking-wide text-stone-500">{label}</dt><dd className="mt-1 text-stone-100">{value}</dd></div>)}
@@ -144,6 +146,27 @@ export default async function HorsePage({ params, searchParams }: PageProps) {
             </div>
           )}
         </section>
+        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+          <section className="club-card">
+            <p className="page-eyebrow">CURRENT STATUS</p>
+            <div className="mt-3"><StatusBadge tone={horse.life_stage === "ACTIVE" ? "success" : "neutral"}>{formatHorseLifeStage(horse.life_stage)}</StatusBadge></div>
+            <dl className="mt-5 space-y-4 text-sm">
+              <div><dt className="text-xs font-bold uppercase tracking-[0.12em] text-[#808881]">Owner</dt><dd className="mt-1 font-semibold text-[#173f35]">{owner?.display_name ?? "未归属"}</dd></div>
+              <div className="border-t border-[#d8d0c2] pt-4"><dt className="text-xs font-bold uppercase tracking-[0.12em] text-[#808881]">当前 WP 年龄</dt><dd className="mt-1 font-semibold text-[#202521]">{wpAge === null ? "尚未初始化" : `${wpAge} 岁`}</dd></div>
+              <div className="border-t border-[#d8d0c2] pt-4"><dt className="text-xs font-bold uppercase tracking-[0.12em] text-[#808881]">当前体力</dt><dd className="mt-1 font-mono text-xl font-semibold text-[#202521]">{horse.current_stamina}</dd></div>
+            </dl>
+          </section>
+          <section className="rounded-2xl border border-[#cfc2a8] bg-[#173f35] p-5 text-white shadow-[0_14px_34px_rgb(23_63_53/18%)]">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#d6b66a]">CAREER</p>
+            <dl className="mt-4 grid grid-cols-2 gap-4">
+              <div><dt className="text-xs text-[#b9c6bf]">出赛</dt><dd className="mt-1 text-2xl font-semibold">{results.length}</dd></div>
+              <div><dt className="text-xs text-[#b9c6bf]">胜场</dt><dd className="mt-1 text-2xl font-semibold">{wins.length}</dd></div>
+              <div><dt className="text-xs text-[#b9c6bf]">G1</dt><dd className="mt-1 text-2xl font-semibold text-[#ead79c]">{g1Wins.length}</dd></div>
+              <div><dt className="text-xs text-[#b9c6bf]">总赏金</dt><dd className="mt-1 break-all font-mono text-sm font-semibold text-[#ead79c]">{formatGameMoney(totalPrize)}</dd></div>
+            </dl>
+          </section>
+        </aside>
+        </div>
       </main>
     </AppShell>
   );

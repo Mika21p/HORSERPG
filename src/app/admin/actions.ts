@@ -371,8 +371,27 @@ export async function deleteHorseFactor(horseId: string, factorId: string) {
   redirectWithNotice(`/admin/horses/${horseId}`, "Horse Factor 已删除。");
 }
 
-export async function saveGameState(formData: FormData) {
-  const { supabase, user } = await requireGM();
+function revalidateGameStateViews() {
+  [
+    "/",
+    "/admin",
+    "/admin/game-state",
+    "/admin/races",
+    "/admin/race-results",
+    "/admin/retirement",
+    "/races",
+    "/retirement",
+  ].forEach((path) => revalidatePath(path));
+}
+
+function gameStateFailureMessage(code: string | undefined, fallback: string) {
+  if (code === "40001") return "游戏时间已被其他操作更新。请刷新页面后重新检查。";
+  if (code === "42501") return "当前账号没有修改游戏时间的权限。";
+  return fallback;
+}
+
+export async function initializeGameState(formData: FormData) {
+  const { supabase } = await requireGM();
   const year = positiveInteger(formData, "current_wp_year");
   const month = positiveInteger(formData, "current_wp_month");
   const week = positiveInteger(formData, "current_wp_week");
@@ -381,23 +400,79 @@ export async function saveGameState(formData: FormData) {
     redirectWithNotice("/admin/game-state", "请填写有效的 WP 年、月（1-12）和周（1-5）。");
   }
 
-  const { data: current } = await supabase.from("game_state").select("id").maybeSingle();
-  const payload = {
-    current_wp_year: year,
-    current_wp_month: month,
-    current_wp_week: week,
-    updated_by_user_id: user.id,
-  };
-
-  const { error } = current
-    ? await supabase.from("game_state").update(payload).eq("id", true)
-    : await supabase.from("game_state").insert({ id: true, ...payload });
+  const { error } = await supabase.rpc("initialize_game_state", {
+    p_year: Number(year),
+    p_month: Number(month),
+    p_week: Number(week),
+  });
 
   if (error) {
-    redirectWithNotice("/admin/game-state", "游戏时间保存失败。");
+    redirectWithNotice("/admin/game-state", gameStateFailureMessage(error.code, "游戏时间初始化失败；当前时间可能已经存在。"));
   }
 
-  revalidatePath("/");
-  revalidatePath("/admin/game-state");
-  redirectWithNotice("/admin/game-state", "当前 Winning Post 时间已保存。");
+  revalidateGameStateViews();
+  redirectWithNotice("/admin/game-state", "Winning Post 时间已初始化并写入审计记录。");
+}
+
+export async function advanceGameStateOneWeek(formData: FormData) {
+  const { supabase } = await requireGM();
+  const expectedYear = positiveInteger(formData, "expected_wp_year");
+  const expectedMonth = positiveInteger(formData, "expected_wp_month");
+  const expectedWeek = positiveInteger(formData, "expected_wp_week");
+
+  if (!expectedYear || !expectedMonth || !expectedWeek) {
+    redirectWithNotice("/admin/game-state", "无法确认你看到的当前时间，请刷新后重试。");
+  }
+
+  const { error } = await supabase.rpc("advance_game_state_one_week", {
+    p_expected_year: Number(expectedYear),
+    p_expected_month: Number(expectedMonth),
+    p_expected_week: Number(expectedWeek),
+  });
+
+  if (error) {
+    redirectWithNotice("/admin/game-state", gameStateFailureMessage(error.code, "时间推进失败，请检查当前状态后重试。"));
+  }
+
+  revalidateGameStateViews();
+  redirectWithNotice("/admin/game-state", "Winning Post 时间已安全推进一周；业务记录未被自动修改。");
+}
+
+export async function correctGameState(formData: FormData) {
+  const { supabase } = await requireGM();
+  const expectedYear = positiveInteger(formData, "expected_wp_year");
+  const expectedMonth = positiveInteger(formData, "expected_wp_month");
+  const expectedWeek = positiveInteger(formData, "expected_wp_week");
+  const newYear = positiveInteger(formData, "current_wp_year");
+  const newMonth = positiveInteger(formData, "current_wp_month");
+  const newWeek = positiveInteger(formData, "current_wp_week");
+  const reason = requiredText(formData, "reason");
+  const confirmation = String(formData.get("confirmation") ?? "");
+
+  if (
+    !expectedYear || !expectedMonth || !expectedWeek ||
+    !newYear || !newMonth || !newWeek ||
+    Number(newMonth) > 12 || Number(newWeek) > 5 ||
+    !reason || confirmation !== "CORRECT WP TIME"
+  ) {
+    redirectWithNotice("/admin/game-state", "纠正资料不完整。请检查新时间、原因和严格确认文本。");
+  }
+
+  const { error } = await supabase.rpc("correct_game_state", {
+    p_confirmation: confirmation,
+    p_expected_month: Number(expectedMonth),
+    p_expected_week: Number(expectedWeek),
+    p_expected_year: Number(expectedYear),
+    p_new_month: Number(newMonth),
+    p_new_week: Number(newWeek),
+    p_new_year: Number(newYear),
+    p_reason: reason,
+  });
+
+  if (error) {
+    redirectWithNotice("/admin/game-state", gameStateFailureMessage(error.code, "时间纠正失败；请确认新时间与当前时间不同。"));
+  }
+
+  revalidateGameStateViews();
+  redirectWithNotice("/admin/game-state", "Winning Post 时间已纠正，原因和前后值已写入审计记录。");
 }

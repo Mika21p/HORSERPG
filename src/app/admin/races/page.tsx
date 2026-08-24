@@ -1,5 +1,7 @@
 import { ActionForm } from "@/components/action-form";
+import { GMPageHeader, GMSectionNav } from "@/components/gm-admin-ui";
 import { Notice } from "@/components/notice";
+import { StatusBadge } from "@/components/ui/primitives";
 import { RaceScheduleForm, type RaceHorseOption } from "@/components/race-schedule-form";
 import {
   confirmRaceEntryRequest,
@@ -69,20 +71,14 @@ export default async function AdminRacesPage({ searchParams }: PageProps) {
   const pendingRequests = (requests ?? []).filter((request) => request.status === "PENDING");
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-6 py-10">
-      <section className="flex flex-col gap-5 border-b border-stone-800 pb-7 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-sm font-semibold tracking-[0.24em] text-amber-300">GM · RACE MANAGEMENT</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight">比赛管理</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-400">审核 PLAYER 报名、直接安排权威赛程，并维护可选固定比赛目录。所有确认、拒绝和直接排程均调用数据库受控 RPC。</p>
-        </div>
-        <div className="rounded-xl border border-amber-300/30 bg-amber-300/5 px-5 py-4 text-sm"><p className="text-stone-500">当前 Winning Post 时间</p><p className="mt-1 font-semibold text-amber-100">{gameState ? formatWpTime(gameState.current_wp_year, gameState.current_wp_month, gameState.current_wp_week) : "尚未初始化"}</p></div>
-      </section>
+    <main className="page-wrap">
+      <GMPageHeader action={<StatusBadge tone="warning">{gameState ? formatWpTime(gameState.current_wp_year, gameState.current_wp_month, gameState.current_wp_week) : "时间未初始化"}</StatusBadge>} description="审核 PLAYER 报名、直接安排权威赛程，并维护可选固定比赛目录。所有确认、拒绝和直接排程均调用数据库受控 RPC。" eyebrow="RACE MANAGEMENT" title="报名与赛程" />
 
       <Notice message={notice} />
       {dataError && <p className="mt-5 rounded-xl border border-red-400/40 bg-red-400/5 p-4 text-sm leading-6 text-red-100">部分比赛管理数据暂时无法读取。请刷新页面；不会显示数据库内部错误。</p>}
+      <GMSectionNav items={[{ count: pendingRequests.length, href: "#pending", label: "待审核" }, { href: "#direct", label: "直接排程" }, { count: entries?.length ?? 0, href: "#confirmed", label: "已确认赛程" }, { count: catalogs?.length ?? 0, href: "#catalog", label: "比赛目录" }]} />
 
-      <section className="mt-8">
+      <section className="scroll-mt-32 mt-8" id="pending">
         <div className="flex items-end justify-between gap-4"><div><h2 className="text-2xl font-semibold text-amber-200">待审核报名</h2><p className="mt-2 text-sm text-stone-400">PLAYER 原始请求永远只读；GM 可独立编辑最终时间、比赛、骑手、跑法与内部 Note。</p></div><span className="font-mono text-sm text-stone-500">{pendingRequests.length} 条</span></div>
         <div className="mt-5 space-y-6">
           {pendingRequests.map((request) => {
@@ -105,7 +101,9 @@ export default async function AdminRacesPage({ searchParams }: PageProps) {
         </div>
       </section>
 
-      <section className="mt-10 grid gap-8 xl:grid-cols-[minmax(0,0.9fr)_minmax(24rem,1.1fr)]">
+      <section className="scroll-mt-32 mt-10 grid gap-8 xl:grid-cols-[minmax(0,0.9fr)_minmax(24rem,1.1fr)]" id="direct">
+        <span className="sr-only scroll-mt-32" id="confirmed">已确认赛程区域位于本区之后</span>
+        <span className="sr-only scroll-mt-32" id="catalog">比赛目录区域位于本区之后</span>
         <section className="rounded-xl border border-stone-800 bg-stone-900 p-6"><h2 className="text-xl font-semibold text-amber-200">GM 直接安排赛程</h2><p className="mt-2 text-sm leading-6 text-stone-400">这是独立于 PLAYER Request 的权威安排。不会创建伪造 Request，也不会让客户端传入 Owner。</p>{gameState ? <div className="mt-5"><RaceScheduleForm action={createDirectRaceEntry} catalogs={activeCatalogs} confirmation="确认直接安排这条最终赛程吗？相同最终事实的重试会返回原记录。" defaultValues={{ wpYear: gameState.current_wp_year, wpMonth: gameState.current_wp_month, wpWeek: gameState.current_wp_week, raceKind: "CATALOG" }} horses={horseOptions} mode="GM_DIRECT" pendingLabel="正在安排…" submitLabel="直接安排赛程" /></div> : <p className="mt-5 text-sm text-amber-100">请先设置 Game State。</p>}</section>
         <section className="rounded-xl border border-stone-800 bg-stone-900 p-6"><h2 className="text-xl font-semibold text-amber-200">创建比赛目录</h2><p className="mt-2 text-sm leading-6 text-stone-400">目录默认月 / 周只用于报名表单建议，不约束 GM 最终确认，也不会修改既有赛程。</p><ActionForm action={createRaceCatalog} className="mt-5 space-y-4" pendingLabel="正在创建…" submitLabel="创建固定比赛"><label className="admin-label">比赛名称<input className="admin-input" name="name" required /></label><div className="grid gap-4 sm:grid-cols-3"><label className="admin-label">Grade<select className="admin-input" defaultValue="OP" name="grade"><option value="OP">OP</option><option value="G3">G3</option><option value="G2">G2</option><option value="G1">G1</option></select></label><label className="admin-label">默认月<select className="admin-input" defaultValue="4" name="default_wp_month">{Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option key={month} value={month}>{month} 月</option>)}</select></label><label className="admin-label">默认周<select className="admin-input" defaultValue="1" name="default_wp_week">{Array.from({ length: 5 }, (_, index) => index + 1).map((week) => <option key={week} value={week}>Week {week}</option>)}</select></label></div><label className="flex items-center gap-2 text-sm text-stone-300"><input defaultChecked name="is_active" type="checkbox" />立即启用</label></ActionForm></section>
       </section>

@@ -419,14 +419,13 @@ begin
 end;
 $$;
 
--- Initialize the singleton through the real local GM RLS context, not as the
--- privileged migration runner.
+-- Initialize the singleton through the controlled GM RPC, not as the
+-- privileged migration runner or a direct table write.
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000302', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
-insert into public.game_state (current_wp_year, current_wp_month, current_wp_week)
-values (2026, 1, 1);
+select public.initialize_game_state(2026, 1, 1);
 
 reset role;
 
@@ -505,8 +504,8 @@ $$;
 
 reset role;
 
--- The real local GM Auth fixture can inspect GM-only data, create and update the
--- singleton game state, and delete an incorrectly recorded horse factor.
+-- The real local GM Auth fixture can inspect GM-only data, advance the
+-- singleton through the controlled RPC, and delete an incorrect horse factor.
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000302', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
@@ -518,7 +517,7 @@ declare
   visible_condition_records integer;
 begin
   select count(*) into visible_audit_logs from public.audit_logs;
-  if visible_audit_logs <> 1 then
+  if visible_audit_logs <> 2 then
     raise exception 'GM could not read audit_logs';
   end if;
 
@@ -535,18 +534,17 @@ begin
   begin
     insert into public.game_state (current_wp_year, current_wp_month, current_wp_week)
     values (2026, 1, 2);
-    raise exception 'GM created a second game_state row';
+    raise exception 'GM directly inserted game_state';
   exception
-    when unique_violation then null;
+    when insufficient_privilege then null;
   end;
 
-  begin
-    update public.game_state
-    set current_wp_month = 13;
-    raise exception 'GM accepted an invalid game_state WP month';
-  exception
-    when check_violation then null;
-  end;
+  update public.game_state
+  set current_wp_month = 13;
+
+  if found then
+    raise exception 'GM directly updated game_state';
+  end if;
 
   delete from public.horse_factors
   where factor_name = 'Sire Factor Two';
@@ -555,8 +553,7 @@ begin
     raise exception 'GM could not delete a horse factor';
   end if;
 
-  update public.game_state
-  set current_wp_week = 2;
+  perform public.advance_game_state_one_week(2026, 1, 1);
 end;
 $$;
 

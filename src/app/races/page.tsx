@@ -2,6 +2,7 @@ import { AppShell } from "@/components/app-shell";
 import { ActionForm } from "@/components/action-form";
 import { Notice } from "@/components/notice";
 import { RaceScheduleForm, type RaceHorseOption } from "@/components/race-schedule-form";
+import { PageHeader } from "@/components/ui/primitives";
 import { submitRaceEntryRequest, withdrawRaceEntryRequest } from "@/app/races/actions";
 import { requirePlayer } from "@/lib/auth/session";
 import {
@@ -105,18 +106,16 @@ export default async function RacesPage({ searchParams }: PageProps) {
 
   return (
     <AppShell email={user.email} isGM={false}>
-      <main className="mx-auto w-full max-w-7xl px-6 py-10">
-        <section className="flex flex-col gap-5 border-b border-stone-800 pb-7 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold tracking-[0.24em] text-amber-300">RACE MANAGEMENT</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight">比赛报名与赛程</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-400">提交的是报名意向，只有 GM 确认后才会成为公开赛程。你的原始请求会与最终确认事实并列保存。</p>
-          </div>
-          <div className="rounded-xl border border-amber-300/30 bg-amber-300/5 px-5 py-4 text-sm">
+      <main className="page-wrap">
+        <PageHeader
+          action={<div className="rounded-xl border border-[#d7c393] bg-[#f4ead0] px-5 py-4 text-sm">
             <p className="text-stone-500">当前 Winning Post 时间</p>
-            <p className="mt-1 font-semibold text-amber-100">{gameState ? formatWpTime(gameState.current_wp_year, gameState.current_wp_month, gameState.current_wp_week) : "尚未由 GM 初始化"}</p>
-          </div>
-        </section>
+            <p className="mt-1 font-semibold text-[#173f35]">{gameState ? formatWpTime(gameState.current_wp_year, gameState.current_wp_month, gameState.current_wp_week) : "尚未由 GM 初始化"}</p>
+          </div>}
+          description="提交的是报名意向，只有 GM 确认后才会成为公开赛程。你的原始请求会与最终确认事实并列保存。"
+          eyebrow="RACE MANAGEMENT"
+          title="比赛报名与赛程"
+        />
 
         <Notice message={notice} />
         {dataError && <p className="mt-5 rounded-xl border border-red-400/40 bg-red-400/5 p-4 text-sm leading-6 text-red-100">部分比赛数据暂时无法读取。请刷新页面；不会显示任何数据库内部错误。</p>}

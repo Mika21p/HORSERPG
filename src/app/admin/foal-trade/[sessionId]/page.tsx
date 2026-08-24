@@ -12,7 +12,9 @@ import {
   updateFoalTradeSessionStatus,
 } from "@/app/admin/foal-trade/actions";
 import { ActionForm } from "@/components/action-form";
+import { GMPageHeader, GMSectionNav } from "@/components/gm-admin-ui";
 import { Notice } from "@/components/notice";
+import { StatusBadge } from "@/components/ui/primitives";
 import { requireGM } from "@/lib/auth/session";
 import {
   formatDateTime,
@@ -130,21 +132,13 @@ export default async function AdminFoalTradeDetailPage({ params, searchParams }:
     : "";
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-6 py-10">
-      <Link className="text-sm text-amber-200 hover:text-amber-100" href="/admin/foal-trade">← 庭先取引管理</Link>
-      <section className="mt-5 rounded-2xl border border-stone-800 bg-stone-900 p-6 sm:p-8">
-        <div className="flex flex-col justify-between gap-5 lg:flex-row">
-          <div>
-            <p className="text-sm font-semibold tracking-[0.18em] text-amber-300">GM · WP {session.wp_year} · AUGUST FOAL TRADE</p>
-            <h1 className="mt-3 text-3xl font-semibold">庭先届次详情</h1>
-            <p className="mt-3 text-stone-400">状态：{formatFoalTradeSessionStatus(session.status)}。报价、询问和结算的最终合法性始终由数据库服务器时间与 RPC 决定。</p>
-          </div>
-          <dl className="grid gap-3 text-sm lg:text-right"><div><dt className="text-stone-500">开始（中国标准时间）</dt><dd className="mt-1 text-stone-200">{formatDateTime(session.starts_at)}</dd></div><div><dt className="text-stone-500">截止（中国标准时间）</dt><dd className="mt-1 text-amber-200">{formatDateTime(session.ends_at)}</dd></div></dl>
-        </div>
-      </section>
+    <main className="page-wrap">
+      <nav className="mb-5 text-sm text-[#68736c]" aria-label="面包屑"><Link className="hover:text-[#173f35]" href="/admin/foal-trade">庭先交易</Link><span className="mx-2">/</span><span>WP {session.wp_year}</span></nav>
+      <GMPageHeader action={<StatusBadge tone={session.status === "OPEN" ? "success" : session.status === "DRAFT" ? "neutral" : "warning"}>{formatFoalTradeSessionStatus(session.status)}</StatusBadge>} description={<>报价、询问和结算的最终合法性由数据库服务器时间与 RPC 决定。<span className="mt-2 block">{formatDateTime(session.starts_at)} — {formatDateTime(session.ends_at)}</span></>} eyebrow={`WP ${session.wp_year} · AUGUST FOAL TRADE`} title="庭先届次详情" />
       <Notice message={notice} />
+      <GMSectionNav items={[{ href: "#overview", label: "届次概览" }, { count: lots?.length ?? 0, href: "#lots", label: "Lot" }, { count: inquiries?.filter((item) => item.status === "REQUESTED").length ?? 0, href: "#lots", label: "询问" }, { href: "#lots", label: "报价结算" }, { href: "#danger", label: "危险操作" }]} />
 
-      <section className="mt-8 grid gap-6 xl:grid-cols-2">
+      <section className="scroll-mt-32 mt-8 grid gap-6 xl:grid-cols-2" id="overview">
         <div className="rounded-xl border border-stone-800 bg-stone-900 p-6">
           <h2 className="text-xl font-semibold text-amber-200">届次状态</h2>
           <ActionForm action={updateFoalTradeSessionStatus.bind(null, session.id)} className="mt-5 flex flex-col gap-3 sm:flex-row" pendingLabel="正在保存…" submitLabel="保存状态">
@@ -181,7 +175,7 @@ export default async function AdminFoalTradeDetailPage({ params, searchParams }:
       )}
 
       {canConfigure && (
-        <section className="mt-6 rounded-xl border border-red-400/35 bg-red-400/5 p-6">
+        <section className="scroll-mt-32 mt-6 rounded-xl border border-red-400/35 bg-red-400/5 p-6" id="danger">
           <h2 className="text-xl font-semibold text-red-100">危险操作：移除草稿届次</h2>
           <p className="mt-2 text-sm leading-6 text-stone-300">仅未开始的草稿届次可移除。该操作会移除其中所有未开始 Lot，使 Horse 可重新配置；询问、报价、结算或已开始届次绝不能通过此处删除。每项移除都会保留审计记录。</p>
           <ActionForm action={removeFoalTradeDraftSession.bind(null, session.id)} className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" confirmation="确认移除本草稿届次及其全部未开始 Lot？此操作不能通过普通页面撤销。" pendingLabel="正在移除…" submitLabel="移除草稿届次" variant="danger">
@@ -190,7 +184,7 @@ export default async function AdminFoalTradeDetailPage({ params, searchParams }:
         </section>
       )}
 
-      <section className="mt-8 grid gap-6">
+      <section className="scroll-mt-32 mt-8 grid gap-6" id="lots">
         {(lots ?? []).map((lot) => {
           const horse = horseById.get(lot.horse_id);
           const lotInquiries = inquiriesByLot.get(lot.id) ?? [];

@@ -1,33 +1,204 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0c0a09;
-  --foreground: #f5f5f4;
+  --page: #f4f0e7;
+  --surface: #fffcf6;
+  --surface-muted: #ebe5da;
+  --ink: #202521;
+  --ink-soft: #5f6962;
+  --line: #d8d0c2;
+  --green: #173f35;
+  --green-soft: #245649;
+  --gold: #b58a3c;
+  --gold-deep: #7d5b24;
+  --danger: #a33d38;
+  --success: #2f7557;
+  --auction-page: #111612;
+  --auction-surface: #1b231d;
+  --auction-gold: #d6b66a;
+  --background: var(--page);
+  --foreground: var(--ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-club-green: var(--green);
+  --color-club-green-soft: var(--green-soft);
+  --color-club-gold: var(--gold);
+  --color-club-page: var(--page);
+  --color-club-surface: var(--surface);
+  --color-club-line: var(--line);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
+* { box-sizing: border-box; }
+html { scroll-padding-top: 72px; }
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: radial-gradient(circle at 80% -10%, rgb(181 138 60 / 10%), transparent 34rem), var(--page);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+}
+
+button, a, input, select, textarea {
+  transition-duration: 180ms;
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-timing-function: ease;
+}
+
+button, a { -webkit-tap-highlight-color: transparent; }
+
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid rgb(181 138 60 / 35%);
+  outline-offset: 2px;
+}
+
+::selection { background: rgb(181 138 60 / 24%); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 @layer components {
-  .admin-label {
-    @apply block text-sm text-stone-300;
+  .display-title {
+    font-family: "Songti SC", "STSong", "Noto Serif SC", Georgia, serif;
+    letter-spacing: -0.025em;
   }
+
+  .page-wrap { @apply mx-auto w-full max-w-[1320px] px-4 py-8 sm:px-6 sm:py-10 xl:px-8; }
+  .page-eyebrow { @apply text-xs font-bold uppercase tracking-[0.22em]; color: var(--gold-deep); }
+  .page-title { @apply mt-3 text-3xl font-semibold sm:text-4xl; color: var(--ink); font-family: "Songti SC", "STSong", "Noto Serif SC", Georgia, serif; }
+  .page-description { @apply mt-3 max-w-3xl text-sm leading-7; color: var(--ink-soft); }
+
+  .club-card {
+    @apply rounded-2xl border p-5 sm:p-6;
+    border-color: var(--line);
+    background: var(--surface);
+    box-shadow: 0 14px 36px rgb(57 47 31 / 7%);
+  }
+
+  .club-card-muted { @apply rounded-xl border p-4; border-color: var(--line); background: rgb(235 229 218 / 48%); }
+  .club-divider { border-color: var(--line); }
+  .admin-label { @apply block text-sm font-medium; color: #49524c; }
 
   .admin-input {
-    @apply mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2.5 text-stone-100 outline-none placeholder:text-stone-600 focus:border-amber-300;
+    @apply mt-2 min-h-11 w-full rounded-xl border px-3 py-2.5 outline-none placeholder:text-stone-400 disabled:cursor-not-allowed disabled:opacity-60;
+    border-color: #c9c0b2;
+    background: #fffdf8;
+    color: var(--ink);
+    box-shadow: inset 0 1px 1px rgb(57 47 31 / 4%);
   }
 
+  .admin-input:hover { border-color: #a99e8d; }
+  .admin-input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgb(181 138 60 / 14%); }
+
   .admin-button {
-    @apply inline-flex items-center justify-center rounded-lg bg-amber-300 px-4 py-2.5 text-sm font-semibold text-stone-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60;
+    background: var(--green);
+    box-shadow: 0 8px 18px rgb(23 63 53 / 15%);
+  }
+
+  .admin-button:hover:not(:disabled) { background: var(--green-soft); transform: translateY(-1px); }
+
+  .table-shell {
+    @apply overflow-hidden rounded-2xl border;
+    border-color: var(--line);
+    background: var(--surface);
+    box-shadow: 0 12px 30px rgb(57 47 31 / 6%);
+  }
+}
+
+/* Existing business pages keep their markup while the prototype palette moves to light. */
+.app-theme-light [class~="bg-stone-950"],
+.app-theme-light [class~="bg-stone-950/50"],
+.app-theme-light [class~="bg-stone-950/60"],
+.app-theme-light [class~="bg-stone-950/70"] { background-color: #f7f3eb; }
+
+.app-theme-light [class~="bg-stone-900"],
+.app-theme-light [class~="bg-stone-900/40"],
+.app-theme-light [class~="bg-stone-900/80"] { background-color: var(--surface); }
+.app-theme-light [class~="bg-stone-800"] { background-color: var(--surface-muted); }
+.app-theme-light [class~="text-stone-950"], .app-theme-light [class~="text-stone-100"] { color: var(--ink); }
+.app-theme-light [class~="text-stone-200"] { color: #343c37; }
+.app-theme-light [class~="text-stone-300"] { color: #4e5952; }
+.app-theme-light [class~="text-stone-400"] { color: #626d66; }
+.app-theme-light [class~="text-stone-500"], .app-theme-light [class~="text-stone-600"] { color: #737c76; }
+.app-theme-light [class~="text-amber-100"],
+.app-theme-light [class~="text-amber-200"],
+.app-theme-light [class~="text-amber-300"] { color: var(--gold-deep); }
+.app-theme-light [class~="border-stone-600"],
+.app-theme-light [class~="border-stone-700"],
+.app-theme-light [class~="border-stone-800"] { border-color: var(--line); }
+.app-theme-light [class~="divide-stone-800"] > :not(:last-child) { border-color: var(--line); }
+.app-theme-light [class~="bg-amber-300"] { background-color: var(--green); }
+.app-theme-light [class~="bg-amber-300"][class~="text-stone-950"] { color: white; }
+.app-theme-light [class~="hover:bg-amber-200"]:hover { background-color: var(--green-soft); }
+.app-theme-light [class~="hover:text-amber-100"]:hover,
+.app-theme-light [class~="hover:text-amber-200"]:hover { color: var(--green); }
+.app-theme-light [class~="hover:border-amber-300"]:hover,
+.app-theme-light [class~="hover:border-amber-300/60"]:hover { border-color: var(--gold); }
+.app-theme-light [class~="text-red-100"], .app-theme-light [class~="text-red-200"] { color: #8f322e; }
+.app-theme-light [class~="text-emerald-100"], .app-theme-light [class~="text-emerald-200"] { color: #246647; }
+.app-theme-light [class~="text-blue-100"], .app-theme-light [class~="text-blue-200"] { color: #315f7a; }
+
+/* The realtime auction is deliberately an immersive dark exception. */
+.auction-stage {
+  color: #f6f2e9;
+  background: radial-gradient(circle at 80% 0%, rgb(214 182 106 / 11%), transparent 32rem), var(--auction-page);
+}
+
+.app-theme-light .auction-stage [class~="bg-stone-950"],
+.app-theme-light .auction-stage [class~="bg-stone-950/50"],
+.app-theme-light .auction-stage [class~="bg-stone-950/60"],
+.app-theme-light .auction-stage [class~="bg-stone-950/70"] { background-color: #111612; }
+.app-theme-light .auction-stage [class~="bg-stone-900"],
+.app-theme-light .auction-stage [class~="bg-stone-900/40"],
+.app-theme-light .auction-stage [class~="bg-stone-900/80"] { background-color: var(--auction-surface); }
+.app-theme-light .auction-stage [class~="bg-stone-800"] { background-color: #273129; }
+.app-theme-light .auction-stage [class~="text-stone-950"] { color: #111612; }
+.app-theme-light .auction-stage [class~="text-stone-100"] { color: #f5f2eb; }
+.app-theme-light .auction-stage [class~="text-stone-200"] { color: #e5e1d9; }
+.app-theme-light .auction-stage [class~="text-stone-300"] { color: #c7c9c4; }
+.app-theme-light .auction-stage [class~="text-stone-400"] { color: #a4aaa4; }
+.app-theme-light .auction-stage [class~="text-stone-500"] { color: #858e87; }
+.app-theme-light .auction-stage [class~="text-amber-100"] { color: #ead79c; }
+.app-theme-light .auction-stage [class~="text-amber-200"],
+.app-theme-light .auction-stage [class~="text-amber-300"] { color: var(--auction-gold); }
+.app-theme-light .auction-stage [class~="border-stone-600"],
+.app-theme-light .auction-stage [class~="border-stone-700"],
+.app-theme-light .auction-stage [class~="border-stone-800"] { border-color: #354139; }
+.app-theme-light .auction-stage [class~="divide-stone-800"] > :not(:last-child) { border-color: #354139; }
+.app-theme-light .auction-stage [class~="text-red-100"],
+.app-theme-light .auction-stage [class~="text-red-200"] { color: #fecaca; }
+.app-theme-light .auction-stage [class~="text-emerald-100"],
+.app-theme-light .auction-stage [class~="text-emerald-200"] { color: #d1fae5; }
+.auction-stage .admin-label { color: #d1d5d2; }
+.auction-stage .admin-input { border-color: #455148; background: #111612; color: #f5f2eb; }
+.auction-stage .admin-button { background: var(--auction-gold); color: #111612; box-shadow: 0 8px 20px rgb(0 0 0 / 24%); }
+
+@media (max-width: 767px) {
+  .responsive-public-table thead { display: none; }
+  .responsive-public-table tbody,
+  .responsive-public-table tr,
+  .responsive-public-table td { display: block; width: 100%; }
+  .responsive-public-table tr { padding: 1rem; }
+  .responsive-public-table td { padding: 0.25rem 0; }
+  .responsive-public-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.1rem;
+    color: #737c76;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 }

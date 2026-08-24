@@ -1,6 +1,6 @@
-import Link from "next/link";
-
 import { signOut } from "@/app/actions/auth";
+import { AppNavigation } from "@/components/app-navigation";
+import { createClient } from "@/lib/supabase/server";
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -8,63 +8,27 @@ type AppShellProps = {
   isGM: boolean;
 };
 
-export function AppShell({ children, email, isGM }: AppShellProps) {
+export async function AppShell({ children, email, isGM }: AppShellProps) {
+  const supabase = await createClient();
+  const { data: gameState } = await supabase
+    .from("game_state")
+    .select("current_wp_year, current_wp_month, current_wp_week")
+    .maybeSingle();
+  const gameTime = gameState
+    ? `${gameState.current_wp_year}年 ${String(gameState.current_wp_month).padStart(2, "0")}月 第${gameState.current_wp_week}周`
+    : "尚未由 GM 设置";
+  const accountActions = (
+    <form action={signOut}>
+      <button className="min-h-11 rounded-xl border border-[#cfc6b8] px-3 py-2 text-xs font-semibold text-[#4e5952] hover:border-[#b58a3c] hover:bg-[#f4ead0] hover:text-[#173f35]">
+        退出登录
+      </button>
+    </form>
+  );
+
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100">
-      <header className="border-b border-stone-800 bg-stone-900/80">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-4 sm:gap-5 sm:px-6">
-          <Link className="font-semibold tracking-[0.2em] text-amber-300" href="/">
-            HORSE RPG
-          </Link>
-          <nav className="order-3 flex basis-full flex-wrap gap-x-4 gap-y-2 text-sm text-stone-300 sm:order-none sm:basis-auto sm:flex-1">
-            <Link className="hover:text-amber-200" href="/owners">
-              Owners
-            </Link>
-            <Link className="hover:text-amber-200" href="/horses">
-              Horses
-            </Link>
-            <Link className="hover:text-amber-200" href="/foal-trade">
-              庭先取引
-            </Link>
-            <Link className="hover:text-amber-200" href="/public-auction">
-              公开拍卖
-            </Link>
-            <Link className="hover:text-amber-200" href="/races">
-              比赛 / Race
-            </Link>
-            <Link className="hover:text-amber-200" href="/results">
-              赛果
-            </Link>
-            {!isGM && (
-              <Link className="hover:text-amber-200" href="/retirement">
-                退役与奖金
-              </Link>
-            )}
-            {isGM && (
-              <>
-                <Link className="hover:text-amber-200" href="/admin/race-results">
-                  赛果管理
-                </Link>
-                <Link className="hover:text-amber-200" href="/admin/breeding">
-                  繁育管理
-                </Link>
-                <Link className="hover:text-amber-200" href="/admin">
-                  GM 后台
-                </Link>
-              </>
-            )}
-          </nav>
-          <div className="ml-auto flex items-center gap-3 text-xs text-stone-400 sm:ml-0">
-            <span className="hidden sm:inline">{email}</span>
-            <form action={signOut}>
-              <button className="rounded-md border border-stone-700 px-3 py-1.5 hover:border-amber-300 hover:text-amber-200">
-                退出
-              </button>
-            </form>
-          </div>
-        </div>
-      </header>
-      {children}
+    <div className="app-theme-light min-h-screen bg-[#f4f0e7] text-[#202521]">
+      <AppNavigation accountActions={accountActions} email={email} gameTime={gameTime} isGM={isGM} />
+      <div className="min-w-0 lg:ml-[248px]">{children}</div>
     </div>
   );
 }

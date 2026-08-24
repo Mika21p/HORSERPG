@@ -11,35 +11,37 @@ export function LoginForm() {
 
   return (
     <form action={formAction} className="mt-8 space-y-5">
-      <label className="block text-sm font-medium text-stone-200" htmlFor="email">
-        Email
+      <label className="block text-sm font-semibold text-[#3f4943]" htmlFor="email">
+        邮箱
         <input
           autoComplete="email"
-          className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2.5 text-stone-100 outline-none placeholder:text-stone-600 focus:border-amber-300"
+          className="mt-2 min-h-12 w-full rounded-xl border border-[#cfc6b8] bg-[#fffdf8] px-4 py-3 text-[#202521] outline-none placeholder:text-[#9da39f] hover:border-[#aca292] focus:border-[#b58a3c] focus:ring-4 focus:ring-[#b58a3c]/10"
           id="email"
           name="email"
+          placeholder="name@example.com"
           required
           type="email"
         />
       </label>
-      <label className="block text-sm font-medium text-stone-200" htmlFor="password">
-        Password
+      <label className="block text-sm font-semibold text-[#3f4943]" htmlFor="password">
+        密码
         <input
           autoComplete="current-password"
-          className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2.5 text-stone-100 outline-none placeholder:text-stone-600 focus:border-amber-300"
+          className="mt-2 min-h-12 w-full rounded-xl border border-[#cfc6b8] bg-[#fffdf8] px-4 py-3 text-[#202521] outline-none placeholder:text-[#9da39f] hover:border-[#aca292] focus:border-[#b58a3c] focus:ring-4 focus:ring-[#b58a3c]/10"
           id="password"
           name="password"
+          placeholder="输入登录密码"
           required
           type="password"
         />
       </label>
       {state.error && (
-        <p aria-live="polite" className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-200">
+        <p aria-live="polite" className="rounded-xl border border-[#dca9a5] bg-[#f8e4e2] px-4 py-3 text-sm text-[#8f322e]">
           {state.error}
         </p>
       )}
       <button
-        className="w-full rounded-lg bg-amber-300 px-4 py-2.5 font-semibold text-stone-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-70"
+        className="min-h-12 w-full rounded-xl bg-[#173f35] px-4 py-3 font-semibold text-white shadow-[0_10px_24px_rgb(23_63_53/18%)] hover:-translate-y-0.5 hover:bg-[#245649] disabled:cursor-not-allowed disabled:opacity-70"
         disabled={pending}
         type="submit"
       >
