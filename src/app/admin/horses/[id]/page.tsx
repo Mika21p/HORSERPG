@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { addHorseFactor, deleteHorseFactor, updateHorse } from "@/app/admin/actions";
 import { BreedingCandidateControls } from "@/components/breeding-candidate-controls";
+import { HorseHealthPanel, type HealthInjury, type HorseHealthEvent } from "@/components/horse-health-panel";
 import { HorseForm } from "@/components/horse-form";
 import { Notice } from "@/components/notice";
 import { requireGM } from "@/lib/auth/session";
@@ -11,10 +12,13 @@ type PageProps = { params: Promise<{ id: string }>; searchParams: Promise<{ noti
 
 export default async function AdminHorseDetailPage({ params, searchParams }: PageProps) {
   const [{ id }, { notice }, { supabase }] = await Promise.all([params, searchParams, requireGM()]);
-  const [{ data: horse }, { data: owners }, { data: factors }] = await Promise.all([
+  const [{ data: horse }, { data: owners }, { data: factors }, { data: injuries }, { data: healthEvents }, { data: gameState }] = await Promise.all([
     supabase.from("horses").select("*").eq("id", id).maybeSingle(),
     supabase.from("owners").select("id, display_name").order("display_name"),
     supabase.from("horse_factors").select("id, factor_kind, factor_name").eq("horse_id", id).order("created_at"),
+    supabase.from("injuries").select("id, status, wp_start_year, wp_start_month, wp_start_week, wp_end_year, wp_end_month, wp_end_week, notes").eq("horse_id", id).order("wp_start_year", { ascending: false }).order("wp_start_month", { ascending: false }).order("wp_start_week", { ascending: false }),
+    supabase.from("horse_health_events").select("id, event_type, status, event_sequence, wp_year, wp_month, wp_week, stamina_before, stamina_after, notes, confirmed_at, voided_at, void_reason").eq("horse_id", id).order("event_sequence", { ascending: false }),
+    supabase.from("game_state").select("current_wp_year, current_wp_month, current_wp_week").maybeSingle(),
   ]);
 
   if (!horse) { notFound(); }
@@ -29,7 +33,51 @@ export default async function AdminHorseDetailPage({ params, searchParams }: Pag
       ? supabase.from("horses").select("id, horse_number, foal_name, name_katakana, translated_name").in("id", parentIds)
       : Promise.resolve({ data: [] }),
   ]);
+  const injuryIds = (injuries ?? []).map((injury) => injury.id);
+  const { data: injuryMetadata } = injuryIds.length
+    ? await supabase.from("injury_private_metadata").select("injury_id, source_health_event_id, resolved_at, resolution_reason, voided_at, void_reason").in("injury_id", injuryIds)
+    : { data: [] };
   const parentById = new Map((parents ?? []).map((parent) => [parent.id, parent]));
+  const injuriesBySourceEventId = new Map<string, HealthInjury>();
+  const metadataByInjuryId = new Map((injuryMetadata ?? []).map((metadata) => [metadata.injury_id, metadata]));
+  const gmInjuries: HealthInjury[] = (injuries ?? []).map((injury) => {
+    const metadata = metadataByInjuryId.get(injury.id);
+    const item: HealthInjury = {
+      id: injury.id,
+      status: injury.status,
+      startYear: injury.wp_start_year,
+      startMonth: injury.wp_start_month,
+      startWeek: injury.wp_start_week,
+      endYear: injury.wp_end_year,
+      endMonth: injury.wp_end_month,
+      endWeek: injury.wp_end_week,
+      notes: injury.notes,
+      sourceHealthEventId: metadata?.source_health_event_id ?? null,
+      resolvedAt: metadata?.resolved_at ?? null,
+      resolutionReason: metadata?.resolution_reason ?? null,
+      voidedAt: metadata?.voided_at ?? null,
+      voidReason: metadata?.void_reason ?? null,
+    };
+    if (item.sourceHealthEventId) injuriesBySourceEventId.set(item.sourceHealthEventId, item);
+    return item;
+  });
+  const latestActiveEventId = (healthEvents ?? []).find((event) => event.status === "ACTIVE")?.id;
+  const gmHealthEvents: HorseHealthEvent[] = (healthEvents ?? []).map((event) => ({
+    id: event.id,
+    eventType: event.event_type,
+    status: event.status,
+    wpYear: event.wp_year,
+    wpMonth: event.wp_month,
+    wpWeek: event.wp_week,
+    staminaBefore: event.stamina_before,
+    staminaAfter: event.stamina_after,
+    notes: event.notes,
+    confirmedAt: event.confirmed_at,
+    voidedAt: event.voided_at,
+    voidReason: event.void_reason,
+    isLatestActive: event.id === latestActiveEventId,
+    sourceInjury: injuriesBySourceEventId.get(event.id) ?? null,
+  }));
   const sireCount = (factors ?? []).filter((factor) => factor.factor_kind === "SIRE").length;
   const mareCount = (factors ?? []).filter((factor) => factor.factor_kind === "MARE").length;
   const sourceLabel = (source: string | null) => source === "INTERNAL" ? "内部 Horse" : source === "REFERENCE" ? "外部资料" : source === "MANUAL" ? "手动" : "历史文本";
@@ -53,6 +101,9 @@ export default async function AdminHorseDetailPage({ params, searchParams }: Pag
           <div><dt className="text-xs text-stone-500">母父</dt><dd className="mt-1 text-stone-100">{horse.broodmare_sire_name || "—"}</dd></div>
         </dl>
         {(horse.sire_parent_source_type || horse.dam_parent_source_type) && <div className="mt-5 rounded-lg border border-stone-800 bg-stone-950/60 p-4 text-sm text-stone-400"><p>父马来源：<span className="text-stone-200">{sourceLabel(horse.sire_parent_source_type)}</span>{horse.sire_reference_id && <Link className="ml-2 text-amber-200 hover:text-amber-100" href="/admin/breeding?tab=references">查看外部资料</Link>}</p><p className="mt-2">母马来源：<span className="text-stone-200">{sourceLabel(horse.dam_parent_source_type)}</span>{horse.dam_reference_id && <Link className="ml-2 text-amber-200 hover:text-amber-100" href="/admin/breeding?tab=references">查看外部资料</Link>}</p></div>}
+      </section>
+      <section className="mt-8 rounded-xl border border-stone-800 bg-stone-900 p-6">
+        <HorseHealthPanel currentStamina={horse.current_stamina} defaultWp={gameState ? { year: gameState.current_wp_year, month: gameState.current_wp_month, week: gameState.current_wp_week } : null} events={gmHealthEvents} horseId={horse.id} injuries={gmInjuries} isGM />
       </section>
       <section className="mt-8 rounded-xl border border-stone-800 bg-stone-900 p-6">
         <h2 className="text-xl font-semibold text-amber-200">繁育候选</h2>

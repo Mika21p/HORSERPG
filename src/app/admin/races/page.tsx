@@ -52,7 +52,7 @@ export default async function AdminRacesPage({ searchParams }: PageProps) {
     supabase.from("confirmed_race_entries").select("id, request_id, horse_id, owner_id, wp_year, wp_month, wp_week, race_kind, race_catalog_id, race_label, jockey, running_style, gm_note, confirmed_at").order("wp_year").order("wp_month").order("wp_week").order("confirmed_at"),
     supabase.from("horses").select("id, horse_number, foal_name, translated_name, owner_id, life_stage, current_jockey_name").order("horse_number"),
     supabase.from("owners").select("id, display_name").order("display_name"),
-    supabase.from("injuries").select("horse_id, wp_start_year, wp_start_month, wp_start_week, wp_end_year, wp_end_month, wp_end_week").eq("status", "ACTIVE"),
+    supabase.from("injuries_public").select("horse_id, wp_start_year, wp_start_month, wp_start_week, wp_end_year, wp_end_month, wp_end_week").eq("status", "ACTIVE"),
   ]);
 
   const dataError = gameStateError || catalogError || requestError || entryError || horseError || ownerError || injuryError;

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { submitHorseRetirementRequest, withdrawHorseRetirementRequest } from "@/app/retirement/actions";
 import { ActionForm } from "@/components/action-form";
 import { AppShell } from "@/components/app-shell";
+import { HorseHealthPanel, type HealthInjury, type HorseHealthEvent } from "@/components/horse-health-panel";
 import { Notice } from "@/components/notice";
 import { requireUser } from "@/lib/auth/session";
 import { formatDateTime, formatGameMoney, formatHorseLifeStage, formatRaceGrade, formatWpTime } from "@/lib/format";
@@ -21,10 +22,12 @@ function sumMoney(rows: PrizeReceivable[]) {
 
 export default async function HorsePage({ params, searchParams }: PageProps) {
   const [{ id }, { notice }, { supabase, user, profile }] = await Promise.all([params, searchParams, requireUser()]);
-  const [{ data: horse }, { data: factors }, { data: publicResults }] = await Promise.all([
+  const [{ data: horse }, { data: factors }, { data: publicResults }, { data: injuries }, { data: healthEvents }] = await Promise.all([
     supabase.from("horses").select("*").eq("id", id).maybeSingle(),
     supabase.from("horse_factors").select("factor_kind, factor_name").eq("horse_id", id).order("created_at"),
     supabase.from("race_results_public").select("race_result_id, actual_race_id, wp_year, wp_month, wp_week, race_name, grade, finish_position, prize_amount, actual_jockey, actual_running_style, recorded_at").eq("horse_id", id).order("wp_year", { ascending: false }).order("wp_month", { ascending: false }).order("wp_week", { ascending: false }).order("recorded_at", { ascending: false }),
+    supabase.from("injuries_public").select("id, status, wp_start_year, wp_start_month, wp_start_week, wp_end_year, wp_end_month, wp_end_week, notes").eq("horse_id", id).order("wp_start_year", { ascending: false }).order("wp_start_month", { ascending: false }).order("wp_start_week", { ascending: false }),
+    supabase.from("horse_health_events_public").select("id, event_type, status, wp_year, wp_month, wp_week, stamina_before, stamina_after").eq("horse_id", id).order("wp_year", { ascending: false }).order("wp_month", { ascending: false }).order("wp_week", { ascending: false }),
   ]);
 
   if (!horse) { notFound(); }
@@ -71,6 +74,27 @@ export default async function HorsePage({ params, searchParams }: PageProps) {
     ["Owner", owner?.display_name ?? "未归属"],
   ];
   const results = publicResults ?? [];
+  const publicInjuries: HealthInjury[] = (injuries ?? []).map((injury) => ({
+    id: injury.id,
+    status: injury.status,
+    startYear: injury.wp_start_year,
+    startMonth: injury.wp_start_month,
+    startWeek: injury.wp_start_week,
+    endYear: injury.wp_end_year,
+    endMonth: injury.wp_end_month,
+    endWeek: injury.wp_end_week,
+    notes: injury.notes,
+  }));
+  const publicHealthEvents: HorseHealthEvent[] = (healthEvents ?? []).map((event) => ({
+    id: event.id,
+    eventType: event.event_type,
+    status: event.status,
+    wpYear: event.wp_year,
+    wpMonth: event.wp_month,
+    wpWeek: event.wp_week,
+    staminaBefore: event.stamina_before,
+    staminaAfter: event.stamina_after,
+  }));
   const wins = results.filter((result) => result.finish_position === 1);
   const g1Wins = wins.filter((result) => result.grade === "G1");
   const totalPrize = results.reduce((sum, result) => sum + BigInt(result.prize_amount), BigInt(0));
@@ -101,6 +125,7 @@ export default async function HorsePage({ params, searchParams }: PageProps) {
             {g1Wins.length > 0 && <div className="mt-6"><h3 className="text-sm font-semibold text-amber-100">G1 胜鞍</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">{g1Wins.map((result) => <article className="rounded-lg border border-amber-300/25 bg-amber-300/5 p-4" key={result.race_result_id}><p className="font-medium text-stone-100">{result.race_name}</p><p className="mt-1 text-sm text-stone-400">{formatWpTime(result.wp_year, result.wp_month, result.wp_week)} · {formatRaceGrade(result.grade)}</p></article>)}</div></div>}
             <div className="mt-6 space-y-3">{results.map((result) => <article className="rounded-lg border border-stone-800 bg-stone-950/50 p-4" key={result.race_result_id}><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-medium text-stone-100">{result.race_name} {result.grade && <span className="ml-2 text-xs text-amber-100">{formatRaceGrade(result.grade)}</span>}</p><p className="mt-1 text-sm text-stone-400">{formatWpTime(result.wp_year, result.wp_month, result.wp_week)} · 骑手：{result.actual_jockey || "未指定"} · 跑法：{result.actual_running_style || "未指定"}</p></div><p className="font-semibold text-amber-100">{result.finish_position} 着 · {formatGameMoney(result.prize_amount)}</p></div></article>)}{!results.length && <p className="rounded-lg border border-stone-800 bg-stone-950/60 p-5 text-sm text-stone-500">暂无正式比赛记录。</p>}</div>
           </div>
+          <HorseHealthPanel currentStamina={horse.current_stamina} events={publicHealthEvents} horseId={horse.id} injuries={publicInjuries} isGM={false} />
           {isOwnPlayerHorse && (
             <div className="mt-8 border-t border-stone-800 pt-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

@@ -18,19 +18,20 @@ function timeOrder(year: number, month: number, week: number) {
 
 export default async function ActualRaceDetailPage({ params, searchParams }: PageProps) {
   const [{ actualRaceId }, { notice }, { supabase }] = await Promise.all([params, searchParams, requireGM()]);
-  const [{ data: actualRace, error: actualRaceError }, { data: gameState, error: gameStateError }, { data: catalogs, error: catalogError }, { data: entries, error: entryError }, { data: results, error: resultError }, { data: horses, error: horseError }, { data: owners, error: ownerError }, { data: allActualRaces, error: allActualRaceError }] = await Promise.all([
+  const [{ data: actualRace, error: actualRaceError }, { data: gameState, error: gameStateError }, { data: catalogs, error: catalogError }, { data: entries, error: entryError }, { data: results, error: resultError }, { data: horses, error: horseError }, { data: owners, error: ownerError }, { data: allActualRaces, error: allActualRaceError }, { data: healthEvents, error: healthEventError }] = await Promise.all([
     supabase.from("actual_races").select("id, wp_year, wp_month, wp_week, race_kind, race_catalog_id, race_name, grade, created_at, updated_at").eq("id", actualRaceId).maybeSingle(),
     supabase.from("game_state").select("current_wp_year, current_wp_month, current_wp_week").maybeSingle(),
     supabase.from("race_catalog").select("id, name, grade, default_wp_month, default_wp_week, is_active").order("name"),
     supabase.from("confirmed_race_entries").select("id, request_id, horse_id, owner_id, wp_year, wp_month, wp_week, race_kind, race_catalog_id, race_label, jockey, running_style, confirmed_at").order("wp_year").order("wp_month").order("wp_week").order("confirmed_at"),
     supabase.from("race_results").select("id, confirmed_race_entry_id, actual_race_id, horse_id, status, finish_position, prize_amount, actual_jockey, actual_running_style, gm_note, recorded_at, voided_at, void_reason").order("recorded_at", { ascending: false }),
-    supabase.from("horses").select("id, horse_number, foal_name, translated_name").order("horse_number"),
+    supabase.from("horses").select("id, horse_number, foal_name, translated_name, current_stamina").order("horse_number"),
     supabase.from("owners").select("id, display_name").order("display_name"),
     supabase.from("actual_races").select("id, wp_year, wp_month, wp_week, race_name, grade").order("wp_year", { ascending: false }).order("wp_month", { ascending: false }).order("wp_week", { ascending: false }),
+    supabase.from("horse_health_events").select("id, horse_id, race_result_id, event_type, status, event_sequence").order("event_sequence", { ascending: false }),
   ]);
 
   if (!actualRace && !actualRaceError) notFound();
-  const dataError = actualRaceError || gameStateError || catalogError || entryError || resultError || horseError || ownerError || allActualRaceError;
+  const dataError = actualRaceError || gameStateError || catalogError || entryError || resultError || horseError || ownerError || allActualRaceError || healthEventError;
   if (!actualRace || !gameState) return <main className="mx-auto w-full max-w-6xl px-6 py-10"><p className="rounded-xl border border-red-400/40 bg-red-400/5 p-6 text-sm text-red-100">实际比赛资料暂时无法读取。请返回赛果管理后刷新；页面不会显示内部错误。</p></main>;
 
   const horsesById = new Map((horses ?? []).map((horse) => [horse.id, horse]));
@@ -38,6 +39,9 @@ export default async function ActualRaceDetailPage({ params, searchParams }: Pag
   const catalogNames = new Map((catalogs ?? []).map((catalog) => [catalog.id, catalog.name]));
   const entriesById = new Map((entries ?? []).map((entry) => [entry.id, entry]));
   const confirmedResultEntryIds = new Set((results ?? []).filter((result) => result.status === "CONFIRMED").map((result) => result.confirmed_race_entry_id));
+  const activePostRaceByResultId = new Map((healthEvents ?? []).filter((event) => event.status === "ACTIVE" && event.event_type === "POST_RACE" && event.race_result_id).map((event) => [event.race_result_id as string, event]));
+  const latestActiveHealthByHorseId = new Map<string, string>();
+  for (const event of healthEvents ?? []) if (event.status === "ACTIVE" && !latestActiveHealthByHorseId.has(event.horse_id)) latestActiveHealthByHorseId.set(event.horse_id, event.id);
   const currentResults = (results ?? []).filter((result) => result.actual_race_id === actualRace.id && result.status === "CONFIRMED");
   const voidedResults = (results ?? []).filter((result) => result.actual_race_id === actualRace.id && result.status === "VOIDED");
   const actualOrder = timeOrder(actualRace.wp_year, actualRace.wp_month, actualRace.wp_week);
@@ -53,7 +57,7 @@ export default async function ActualRaceDetailPage({ params, searchParams }: Pag
     const sameTime = entryOrder === actualOrder;
     const sameRace = entry.race_kind === selectedActualRace.race_kind && (entry.race_kind === "CATALOG" ? entry.race_catalog_id === selectedActualRace.race_catalog_id : (entry.race_label ?? "").trim().toLocaleLowerCase() === selectedActualRace.race_name.trim().toLocaleLowerCase());
     const recommendation: RaceResultCandidate["recommendation"] = entryOrder > nowOrder ? "未来赛程" : sameTime && sameRace ? "强推荐" : sameTime ? "同周候选" : Math.abs(entryOrder - actualOrder) <= 1 ? "相邻周候选" : "其他待录赛程";
-    return { id: entry.id, horseId: entry.horse_id, horseName: horsesById.get(entry.horse_id)?.translated_name || horsesById.get(entry.horse_id)?.foal_name || "Horse", horseNumber: horsesById.get(entry.horse_id)?.horse_number ?? "—", ownerName: ownerNames.get(entry.owner_id) ?? "Owner", wpYear: entry.wp_year, wpMonth: entry.wp_month, wpWeek: entry.wp_week, raceKind: entry.race_kind, raceCatalogId: entry.race_catalog_id, raceLabel: entryRaceName(entry), jockey: entry.jockey, runningStyle: entry.running_style, source: entry.request_id ? "PLAYER Request" : "GM Direct", recommendation };
+    return { id: entry.id, horseId: entry.horse_id, horseName: horsesById.get(entry.horse_id)?.translated_name || horsesById.get(entry.horse_id)?.foal_name || "Horse", horseNumber: horsesById.get(entry.horse_id)?.horse_number ?? "—", ownerName: ownerNames.get(entry.owner_id) ?? "Owner", currentStamina: horsesById.get(entry.horse_id)?.current_stamina ?? null, wpYear: entry.wp_year, wpMonth: entry.wp_month, wpWeek: entry.wp_week, raceKind: entry.race_kind, raceCatalogId: entry.race_catalog_id, raceLabel: entryRaceName(entry), jockey: entry.jockey, runningStyle: entry.running_style, source: entry.request_id ? "PLAYER Request" : "GM Direct", recommendation };
   }
 
   const candidates = (entries ?? []).filter((entry) => !confirmedResultEntryIds.has(entry.id)).map(toCandidate).sort((left, right) => {
@@ -64,7 +68,8 @@ export default async function ActualRaceDetailPage({ params, searchParams }: Pag
   function toHistory(result: NonNullable<typeof results>[number]): RaceResultHistoryItem | null {
     const entry = entriesById.get(result.confirmed_race_entry_id);
     if (!entry) return null;
-    return { ...toCandidate(entry), resultId: result.id, status: result.status, actualRaceId: result.actual_race_id, finishPosition: result.finish_position, prizeAmount: String(result.prize_amount), actualJockey: result.actual_jockey, actualRunningStyle: result.actual_running_style, gmNote: result.gm_note, recordedAt: result.recorded_at, voidedAt: result.voided_at, voidReason: result.void_reason };
+    const postRaceEvent = activePostRaceByResultId.get(result.id);
+    return { ...toCandidate(entry), resultId: result.id, status: result.status, actualRaceId: result.actual_race_id, finishPosition: result.finish_position, prizeAmount: String(result.prize_amount), actualJockey: result.actual_jockey, actualRunningStyle: result.actual_running_style, gmNote: result.gm_note, recordedAt: result.recorded_at, voidedAt: result.voided_at, voidReason: result.void_reason, postRaceProcessed: Boolean(postRaceEvent), hasLaterActiveHealthEvent: Boolean(postRaceEvent && latestActiveHealthByHorseId.get(result.horse_id) !== postRaceEvent.id) };
   }
 
   const history = currentResults.map(toHistory).filter((value): value is RaceResultHistoryItem => value !== null);

@@ -78,7 +78,7 @@ export default async function RacesPage({ searchParams }: PageProps) {
   const horseIds = (horses ?? []).map((horse) => horse.id);
   const { data: injuries, error: injuryError } = horseIds.length
     ? await supabase
-      .from("injuries")
+      .from("injuries_public")
       .select("horse_id, wp_start_year, wp_start_month, wp_start_week, wp_end_year, wp_end_month, wp_end_week")
       .eq("status", "ACTIVE")
       .in("horse_id", horseIds)

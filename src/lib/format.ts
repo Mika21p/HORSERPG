@@ -173,3 +173,32 @@ export function formatPrizeReceivableLedgerEntryKind(kind: string | null | undef
 
   return kind ? labels[kind] ?? kind : "—";
 }
+
+export function formatInjuryStatus(status: string | null | undefined) {
+  const labels: Record<string, string> = {
+    ACTIVE: "伤病中",
+    RECOVERED: "已恢复",
+    VOIDED: "已作废",
+    CANCELLED: "已取消",
+  };
+
+  return status ? labels[status] ?? status : "—";
+}
+
+export function formatHorseHealthEventType(eventType: string | null | undefined) {
+  const labels: Record<string, string> = {
+    POST_RACE: "赛后状态",
+    MANUAL_ADJUSTMENT: "体力调整",
+  };
+
+  return eventType ? labels[eventType] ?? eventType : "—";
+}
+
+export function formatHorseHealthEventStatus(status: string | null | undefined) {
+  const labels: Record<string, string> = {
+    ACTIVE: "当前有效",
+    VOIDED: "已作废",
+  };
+
+  return status ? labels[status] ?? status : "—";
+}
