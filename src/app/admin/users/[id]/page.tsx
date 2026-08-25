@@ -38,14 +38,14 @@ export default async function AdminPlayerDetailPage({ params, searchParams }: Pa
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
       <Link className="text-sm text-amber-200 hover:text-amber-100" href="/admin/users">
-        ← Users
+        ← 用户管理
       </Link>
-      <h1 className="mt-5 text-3xl font-semibold tracking-tight">PLAYER 管理</h1>
+      <h1 className="mt-5 text-3xl font-semibold tracking-tight">玩家账号管理</h1>
       <Notice message={notice} />
       <section className="mt-6 rounded-xl border border-stone-800 bg-stone-900 p-6">
         <dl className="grid gap-4 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-stone-500">绑定 Owner</dt>
+            <dt className="text-stone-500">绑定马主</dt>
             <dd className="mt-1 text-stone-100">{owner?.display_name ?? "—"}</dd>
           </div>
           <div>
@@ -59,7 +59,7 @@ export default async function AdminPlayerDetailPage({ params, searchParams }: Pa
             <input className="admin-input" defaultValue={profile.display_name ?? ""} id="display_name" name="display_name" />
           </label>
           <label className="admin-label" htmlFor="email">
-            登录 Email
+            登录邮箱
             <input autoComplete="off" className="admin-input" defaultValue={authUser.user.email ?? ""} id="email" name="email" required type="email" />
           </label>
           <label className="admin-label" htmlFor="password">
@@ -67,7 +67,7 @@ export default async function AdminPlayerDetailPage({ params, searchParams }: Pa
             <input autoComplete="new-password" className="admin-input" id="password" minLength={8} name="password" type="text" />
           </label>
           <p className="text-xs leading-5 text-stone-500">旧密码不会回显；填写新密码并保存后将立即覆盖旧密码。新建与重设密码均按 GM 要求直接显示在当前输入框中。</p>
-          <button className="admin-button">保存 PLAYER 资料</button>
+          <button className="admin-button">保存玩家资料</button>
         </form>
       </section>
     </main>

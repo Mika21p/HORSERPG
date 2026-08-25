@@ -123,7 +123,7 @@ export default async function RacesPage({ searchParams }: PageProps) {
         <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,0.92fr)_minmax(22rem,1.08fr)]">
           <section className="h-fit rounded-xl border border-stone-800 bg-stone-900 p-6">
             <h2 className="text-xl font-semibold text-amber-200">提交报名意向</h2>
-            <p className="mt-2 text-sm leading-6 text-stone-400">仅 ACTIVE Horse 可选。固定比赛会建议默认月 / 周，但你始终可以自行调整申请时间。</p>
+            <p className="mt-2 text-sm leading-6 text-stone-400">仅现役马匹可选。固定比赛会建议默认月 / 周，但你始终可以自行调整申请时间。</p>
             {gameState ? (
               <div className="mt-5">
                 <RaceScheduleForm
@@ -141,7 +141,7 @@ export default async function RacesPage({ searchParams }: PageProps) {
                   submitLabel="提交报名意向"
                 />
               </div>
-            ) : <p className="mt-5 rounded-lg border border-amber-300/30 bg-amber-300/5 p-4 text-sm text-amber-100">GM 尚未设置 Game State，当前不能提交报名。</p>}
+            ) : <p className="mt-5 rounded-lg border border-amber-300/30 bg-amber-300/5 p-4 text-sm text-amber-100">GM 尚未设置游戏时间，当前不能提交报名。</p>}
           </section>
 
           <section>
@@ -160,9 +160,9 @@ export default async function RacesPage({ searchParams }: PageProps) {
                       <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusClass(request.status)}`}>{formatRaceEntryRequestStatus(request.status)}</span>
                     </div>
                     <div className={`mt-5 grid gap-4 ${request.status === "CONFIRMED" ? "lg:grid-cols-2" : ""}`}>
-                      <section className="rounded-lg border border-stone-800 bg-stone-950/60 p-4"><p className="text-xs font-semibold tracking-[0.14em] text-stone-500">PLAYER 原始请求</p><p className="mt-2 font-medium text-stone-100">{formatWpTime(request.requested_wp_year, request.requested_wp_month, request.requested_wp_week)}</p><p className="mt-1 text-sm text-amber-100">{requestedRaceName(request, catalogNames)}</p><p className="mt-2 text-sm text-stone-400">希望骑手：{request.requested_jockey || "未指定"} · 跑法：{request.requested_running_style || "未指定"}</p>{request.player_note && <p className="mt-2 text-sm leading-6 text-stone-400">备注：{request.player_note}</p>}</section>
+                      <section className="rounded-lg border border-stone-800 bg-stone-950/60 p-4"><p className="text-xs font-semibold tracking-[0.14em] text-stone-500">玩家原始请求</p><p className="mt-2 font-medium text-stone-100">{formatWpTime(request.requested_wp_year, request.requested_wp_month, request.requested_wp_week)}</p><p className="mt-1 text-sm text-amber-100">{requestedRaceName(request, catalogNames)}</p><p className="mt-2 text-sm text-stone-400">希望骑手：{request.requested_jockey || "未指定"} · 跑法：{request.requested_running_style || "未指定"}</p>{request.player_note && <p className="mt-2 text-sm leading-6 text-stone-400">备注：{request.player_note}</p>}</section>
                       {request.status === "CONFIRMED" && (
-                        <section className="rounded-lg border border-emerald-400/35 bg-emerald-400/5 p-4"><p className="text-xs font-semibold tracking-[0.14em] text-emerald-200">GM 最终确认</p>{resolution ? <><p className="mt-2 font-medium text-stone-100">{formatWpTime(resolution.wp_year, resolution.wp_month, resolution.wp_week)}</p><p className="mt-1 text-sm text-emerald-100">{raceName(resolution, catalogNames)}</p><p className="mt-2 text-sm text-stone-400">骑手：{resolution.jockey || "未指定"} · 跑法：{resolution.running_style || "未指定"}</p><p className="mt-2 text-xs text-stone-500">确认于 {formatDateTime(resolution.confirmed_at)}</p></> : <p className="mt-2 text-sm leading-6 text-amber-100">最终确认映射暂时未读取到。请刷新；不会以 Horse、时间或比赛名称猜测关联。</p>}</section>
+                        <section className="rounded-lg border border-emerald-400/35 bg-emerald-400/5 p-4"><p className="text-xs font-semibold tracking-[0.14em] text-emerald-200">GM 最终确认</p>{resolution ? <><p className="mt-2 font-medium text-stone-100">{formatWpTime(resolution.wp_year, resolution.wp_month, resolution.wp_week)}</p><p className="mt-1 text-sm text-emerald-100">{raceName(resolution, catalogNames)}</p><p className="mt-2 text-sm text-stone-400">骑手：{resolution.jockey || "未指定"} · 跑法：{resolution.running_style || "未指定"}</p><p className="mt-2 text-xs text-stone-500">确认于 {formatDateTime(resolution.confirmed_at)}</p></> : <p className="mt-2 text-sm leading-6 text-amber-100">最终确认映射暂时未读取到。请刷新；不会以马匹、时间或比赛名称猜测关联。</p>}</section>
                       )}
                     </div>
                     {request.status === "REJECTED" && <p className="mt-4 rounded-lg border border-red-400/30 bg-red-400/5 p-3 text-sm text-red-100">已拒绝{request.rejection_reason ? `：${request.rejection_reason}` : "。"}</p>}
@@ -178,13 +178,13 @@ export default async function RacesPage({ searchParams }: PageProps) {
 
         <section className="mt-10">
           <h2 className="text-xl font-semibold text-amber-200">我的已确认赛程</h2>
-          <p className="mt-2 text-sm text-stone-400">以下为公开确认事实，历史确认不会因 Game State 推进而消失。</p>
+          <p className="mt-2 text-sm text-stone-400">以下为公开确认事实，历史确认不会因游戏时间推进而消失。</p>
           <ScheduleList catalogNames={catalogNames} entries={ownSchedule} horses={allHorsesById} owners={ownerNames} />
         </section>
 
         <section className="mt-10 border-t border-stone-800 pt-10">
           <h2 className="text-xl font-semibold text-amber-200">公开已确认赛程</h2>
-          <p className="mt-2 text-sm text-stone-400">只读取公开赛程投影；不显示报名来源、GM Note 或确认 GM。</p>
+          <p className="mt-2 text-sm text-stone-400">只读取公开赛程；不显示报名来源、GM 备注或确认人。</p>
           <ScheduleList catalogNames={catalogNames} entries={publicEntries ?? []} horses={allHorsesById} owners={ownerNames} />
         </section>
       </main>
@@ -205,7 +205,7 @@ function ScheduleList({
 }) {
   return (
     <div className="mt-5 grid gap-4 lg:grid-cols-2">
-      {entries.map((entry) => <article className="rounded-xl border border-stone-800 bg-stone-900 p-5" key={entry.id}><div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><div><p className="font-semibold text-stone-100">{horseName(horses.get(entry.horse_id))}</p><p className="mt-1 text-sm text-stone-400">Owner：{owners.get(entry.owner_id) ?? "Owner"}</p></div><p className="font-mono text-sm text-amber-200">{formatWpTime(entry.wp_year, entry.wp_month, entry.wp_week)}</p></div><p className="mt-4 font-medium text-amber-100">{raceName(entry, catalogNames)}</p><p className="mt-2 text-sm text-stone-400">骑手：{entry.jockey || "未指定"} · 跑法：{entry.running_style || "未指定"}</p><p className="mt-2 text-xs text-stone-500">确认于 {formatDateTime(entry.confirmed_at)}</p></article>)}
+      {entries.map((entry) => <article className="rounded-xl border border-stone-800 bg-stone-900 p-5" key={entry.id}><div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><div><p className="font-semibold text-stone-100">{horseName(horses.get(entry.horse_id))}</p><p className="mt-1 text-sm text-stone-400">马主：{owners.get(entry.owner_id) ?? "未知马主"}</p></div><p className="font-mono text-sm text-amber-200">{formatWpTime(entry.wp_year, entry.wp_month, entry.wp_week)}</p></div><p className="mt-4 font-medium text-amber-100">{raceName(entry, catalogNames)}</p><p className="mt-2 text-sm text-stone-400">骑手：{entry.jockey || "未指定"} · 跑法：{entry.running_style || "未指定"}</p><p className="mt-2 text-xs text-stone-500">确认于 {formatDateTime(entry.confirmed_at)}</p></article>)}
       {!entries.length && <p className="rounded-xl border border-stone-800 bg-stone-900 p-6 text-sm text-stone-500">暂无已确认赛程。</p>}
     </div>
   );

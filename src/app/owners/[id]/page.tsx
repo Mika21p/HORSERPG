@@ -27,7 +27,7 @@ export default async function OwnerPage({ params }: PageProps) {
         <section className="mt-5 rounded-xl border border-stone-800 bg-stone-900 p-7">
           <p className="text-sm font-semibold tracking-[0.18em] text-amber-300">OWNER</p>
           <h1 className="mt-3 text-3xl font-semibold">{owner.display_name}</h1>
-          <p className="mt-5 text-sm leading-6 text-stone-400">第一阶段仅展示 Core Schema 中适合公开的基础资料。</p>
+          <p className="mt-5 text-sm leading-6 text-stone-400">本页仅展示适合公开的基础资料。</p>
         </section>
       </main>
     </AppShell>

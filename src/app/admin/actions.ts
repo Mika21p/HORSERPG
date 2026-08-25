@@ -17,6 +17,7 @@ const lifeStageValues = new Set([
   "BREEDING",
   "DISCARDED",
 ]);
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function redirectWithNotice(path: string, notice: string): never {
   redirect(`${path}?notice=${encodeURIComponent(notice)}`);
@@ -97,6 +98,51 @@ export async function updateOwner(ownerId: string, formData: FormData) {
   revalidatePath("/owners");
   revalidatePath(`/owners/${ownerId}`);
   redirectWithNotice(`/admin/owners/${ownerId}`, "Owner 公开资料已更新。");
+}
+
+export async function adjustOwnerFunds(ownerId: string, formData: FormData) {
+  const { supabase } = await requireGM();
+  const direction = requiredText(formData, "direction");
+  const amount = positiveInteger(formData, "amount");
+  const reason = requiredText(formData, "reason");
+  const requestId = requiredText(formData, "request_id");
+
+  if ((direction !== "CREDIT" && direction !== "DEBIT") || !amount || !reason || !uuidPattern.test(requestId)) {
+    redirectWithNotice(`/admin/owners/${ownerId}`, "请填写调整方向、正整数金额和调整原因后再确认。");
+  }
+
+  const signedAmount = direction === "CREDIT" ? amount : `-${amount}`;
+  const { error } = await supabase.rpc("adjust_owner_funds", {
+    p_owner_id: ownerId,
+    p_amount: signedAmount,
+    p_reason: reason,
+    p_request_id: requestId,
+  });
+
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (error.code === "42501") {
+      redirectWithNotice(`/admin/owners/${ownerId}`, "当前账号没有进行资金调整的权限。");
+    }
+    if (message.includes("would make account funds or available funds negative")) {
+      redirectWithNotice(`/admin/owners/${ownerId}`, "此次扣减会使账户资金或可用资金为负，已拒绝。请先处理冻结资金或调整金额。");
+    }
+    if (message.includes("idempotency key conflict")) {
+      redirectWithNotice(`/admin/owners/${ownerId}`, "该调整请求已用于不同内容，未重复写入资金流水。请刷新页面后重新发起调整。");
+    }
+    redirectWithNotice(`/admin/owners/${ownerId}`, "资金调整失败。数据库未改写任何既有流水；请检查输入后重试。");
+  }
+
+  [
+    "/admin/owners",
+    `/admin/owners/${ownerId}`,
+    "/owners",
+    `/owners/${ownerId}`,
+    "/foal-trade",
+    "/public-auction",
+    "/retirement",
+  ].forEach((path) => revalidatePath(path));
+  redirectWithNotice(`/admin/owners/${ownerId}`, "资金调整已作为不可修改的正式流水和审计记录追加。");
 }
 
 export async function createPlayer(formData: FormData) {

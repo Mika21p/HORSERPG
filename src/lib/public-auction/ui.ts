@@ -72,7 +72,7 @@ export function formatPublicAuctionStatus(status: string) {
     VOIDED: "已作废",
   };
 
-  return labels[status] ?? status;
+  return labels[status] ?? "未知状态";
 }
 
 export function publicAuctionConnectionLabel(state: string) {

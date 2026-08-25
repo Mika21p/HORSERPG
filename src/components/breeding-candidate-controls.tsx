@@ -41,13 +41,13 @@ export function BreedingCandidateControls({
   const [message, setMessage] = useState<string | null>(null);
 
   if (lifeStage !== "RETIRED") {
-    return <p className="text-sm leading-6 text-stone-500">仅已退役 Horse 可加入繁育候选。</p>;
+    return <p className="text-sm leading-6 text-stone-500">仅已退役马匹可加入繁育候选。</p>;
   }
   if (sex === "GELDING") {
     return <p className="text-sm leading-6 text-stone-500">不具备繁育候选资格：阉马不能成为候选种牡马或繁殖牝马。</p>;
   }
   if (sex !== "MALE" && sex !== "FEMALE") {
-    return <p className="text-sm leading-6 text-stone-500">当前 Horse 性别资料无效，不能加入繁育候选。</p>;
+    return <p className="text-sm leading-6 text-stone-500">当前马匹性别资料无效，不能加入繁育候选。</p>;
   }
 
   const activate = () => {
@@ -84,7 +84,7 @@ export function BreedingCandidateControls({
             <label className="admin-label">停用原因（可选）
               <textarea className="admin-input min-h-20" onChange={(event) => setReason(event.target.value)} placeholder="例如：本季不再开放为内部繁育候选" value={reason} />
             </label>
-            <p className="mt-3 text-sm leading-6 text-red-100">确认后将从新建幼驹的默认候选中移除；Horse 本身继续保持 RETIRED，已有血统快照不受影响。</p>
+            <p className="mt-3 text-sm leading-6 text-red-100">确认后将从新建幼驹的默认候选中移除；马匹本身继续保持已退役状态，已有血统快照不受影响。</p>
             <div className="mt-4 flex flex-wrap gap-3">
               <button className="inline-flex items-center justify-center rounded-lg border border-stone-600 px-4 py-2.5 text-sm font-semibold text-stone-200 hover:border-amber-300" disabled={pending} onClick={() => setConfirmDeactivate(false)} type="button">取消</button>
               <button className="inline-flex items-center justify-center rounded-lg border border-red-400/60 px-4 py-2.5 text-sm font-semibold text-red-200 hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-60" disabled={pending} onClick={deactivate} type="button">{pending ? "移出中…" : "确认移出候选"}</button>

@@ -11,6 +11,8 @@ import {
   formatFoalTradeLotStatus,
   formatFoalTradeSessionStatus,
   formatGameMoney,
+  formatHorseSex,
+  formatSecretBidOfferStatus,
 } from "@/lib/format";
 
 type PageProps = {
@@ -137,11 +139,11 @@ export default async function FoalTradeSessionPage({ params, searchParams }: Pag
             <h2 className="text-xl font-semibold text-amber-200">本届 GM 询问机会</h2>
             {inquiry ? (
               <div className="mt-4 rounded-lg border border-stone-800 bg-stone-950/60 p-4 text-sm">
-                <p className="font-medium text-stone-100">已询问：{inquiryHorse ? `Horse #${inquiryHorse.horse_number} · ${inquiryHorse.translated_name || inquiryHorse.foal_name}` : "已记录的 Lot"}</p>
+                <p className="font-medium text-stone-100">已询问：{inquiryHorse ? `马匹 #${inquiryHorse.horse_number} · ${inquiryHorse.translated_name || inquiryHorse.foal_name}` : "已记录的标的"}</p>
                 <p className="mt-2 text-stone-400">{inquiry.status === "ANSWERED" && inquiry.gm_comment ? inquiry.gm_comment : "等待 GM 回复"}</p>
               </div>
             ) : (
-              <p className="mt-3 text-sm text-stone-400">本届尚未使用。每届只能询问一匹幼驹，提交后不能改成其他 Horse。</p>
+              <p className="mt-3 text-sm text-stone-400">本届尚未使用。每届只能询问一匹幼驹，提交后不能改成其他马匹。</p>
             )}
           </section>
         )}
@@ -161,16 +163,16 @@ export default async function FoalTradeSessionPage({ params, searchParams }: Pag
                 <div className="flex flex-col justify-between gap-5 lg:flex-row">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-3">
-                      <p className="font-mono text-sm font-semibold tracking-wide text-amber-300">HORSE #{horse?.horse_number ?? "—"}</p>
+                      <p className="font-mono text-sm font-semibold tracking-wide text-amber-300">马匹 #{horse?.horse_number ?? "—"}</p>
                       <span className="rounded-full border border-stone-700 px-3 py-1 text-xs text-stone-300">{formatFoalTradeLotStatus(lot.status)}</span>
                     </div>
-                    <h2 className="mt-3 text-2xl font-semibold text-stone-100">{horse?.translated_name || horse?.foal_name || "Horse 资料不可用"}</h2>
+                    <h2 className="mt-3 text-2xl font-semibold text-stone-100">{horse?.translated_name || horse?.foal_name || "马匹资料不可用"}</h2>
                     <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                      <div><dt className="text-stone-500">性别 / 毛色</dt><dd className="mt-1 text-stone-200">{horse ? `${horse.sex} / ${horse.coat_color}` : "—"}</dd></div>
+                      <div><dt className="text-stone-500">性别 / 毛色</dt><dd className="mt-1 text-stone-200">{horse ? `${formatHorseSex(horse.sex)} / ${horse.coat_color}` : "—"}</dd></div>
                       <div><dt className="text-stone-500">父 / 父系</dt><dd className="mt-1 text-stone-200">{horse ? `${horse.sire_name} / ${horse.sire_line}` : "—"}</dd></div>
                       <div><dt className="text-stone-500">母父</dt><dd className="mt-1 text-stone-200">{horse?.broodmare_sire_name ?? "—"}</dd></div>
-                      <div><dt className="text-stone-500">SIRE Factors</dt><dd className="mt-1 text-stone-200">{sireFactors.map((factor) => factor.factor_name).join("、") || "—"}</dd></div>
-                      <div><dt className="text-stone-500">MARE Factors</dt><dd className="mt-1 text-stone-200">{mareFactors.map((factor) => factor.factor_name).join("、") || "—"}</dd></div>
+                      <div><dt className="text-stone-500">父系因子</dt><dd className="mt-1 text-stone-200">{sireFactors.map((factor) => factor.factor_name).join("、") || "—"}</dd></div>
+                      <div><dt className="text-stone-500">母系因子</dt><dd className="mt-1 text-stone-200">{mareFactors.map((factor) => factor.factor_name).join("、") || "—"}</dd></div>
                       <div><dt className="text-stone-500">最低报价</dt><dd className="mt-1 font-mono font-semibold text-amber-200">{formatGameMoney(lot.minimum_price)}</dd></div>
                     </dl>
                   </div>
@@ -179,8 +181,8 @@ export default async function FoalTradeSessionPage({ params, searchParams }: Pag
                     <aside className="w-full rounded-lg border border-emerald-400/30 bg-emerald-400/5 p-4 text-sm lg:max-w-xs">
                       <p className="font-semibold text-emerald-200">公开结算结果</p>
                       {settlement.status === "SOLD" ? (
-                        <><p className="mt-3 text-stone-400">成交 Owner</p><p className="mt-1 text-stone-100">{winnerNameById.get(settlement.winner_owner_id ?? "") ?? "已确认 Owner"}</p><p className="mt-3 text-stone-400">成交价格</p><p className="mt-1 font-mono text-emerald-100">{formatGameMoney(settlement.amount)}</p></>
-                      ) : <p className="mt-3 text-stone-300">本 Lot 未成交。</p>}
+                        <><p className="mt-3 text-stone-400">成交马主</p><p className="mt-1 text-stone-100">{winnerNameById.get(settlement.winner_owner_id ?? "") ?? "已确认马主"}</p><p className="mt-3 text-stone-400">成交价格</p><p className="mt-1 font-mono text-emerald-100">{formatGameMoney(settlement.amount)}</p></>
+                      ) : <p className="mt-3 text-stone-300">本标的未成交。</p>}
                       <p className="mt-3 text-xs text-stone-500">确认：{formatDateTime(settlement.confirmed_at)}</p>
                     </aside>
                   )}
@@ -220,14 +222,14 @@ export default async function FoalTradeSessionPage({ params, searchParams }: Pag
                         <ActionForm action={submitSecretBid.bind(null, session.id, lot.id)} className="mt-3 flex flex-col gap-3 sm:flex-row" pendingLabel="正在提交…" submitLabel={ownOffer?.status === "WITHDRAWN" ? "重新报价" : "提交秘密报价"}>
                           <input aria-label="秘密报价金额" className="admin-input mt-0 min-w-0 flex-1" min={String(lot.minimum_price)} name="amount" placeholder={`最低 ${formatGameMoney(lot.minimum_price)}`} required step="1" type="number" />
                         </ActionForm>
-                      ) : <p className="mt-2 text-sm text-stone-500">{ownOffer?.status === "WITHDRAWN" ? "你的报价已撤回。" : ownOffer ? `你的报价状态：${ownOffer.status}` : "你的报价：尚未报价"}</p>}
+                      ) : <p className="mt-2 text-sm text-stone-500">{ownOffer?.status === "WITHDRAWN" ? "你的报价已撤回。" : ownOffer ? `你的报价状态：${formatSecretBidOfferStatus(ownOffer.status)}` : "你的报价：尚未报价"}</p>}
                     </section>
                   </div>
                 )}
               </article>
             );
           })}
-          {!lots?.length && <p className="text-stone-500">本届尚未配置公开 Lot。</p>}
+          {!lots?.length && <p className="text-stone-500">本届尚未配置公开标的。</p>}
         </section>
       </main>
     </AppShell>

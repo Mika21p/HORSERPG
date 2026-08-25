@@ -119,14 +119,14 @@ Race Results v0.4-C 已确定三层事实：`confirmed_race_entries` 是赛前�
 
 | 表 | 职责与建议存储 | 关系 | PLAYER RLS |
 | --- | --- | --- | --- |
-| `financial_transactions` | Owner、`amount bigint`（正负）、交易类别、有效现实时间、来源对象/结算引用、GM/系统操作者、备注、时间戳。仅记录真正入账或扣款的事实。 | 多对一 Owner；可由拍卖、庭先、奖金释放或修正产生。 | 逐笔公开范围未定；仅 GM/server 追加，禁止普通 UPDATE/DELETE。 |
+| `financial_transactions` | Owner、`amount bigint`（正负）、交易类别、有效现实时间、来源对象/结算引用、GM/系统操作者、备注、时间戳。仅记录真正入账或扣款的事实。 | 多对一 Owner；可由拍卖、庭先、奖金释放、修正或 GM 手工调整产生。 | 逐笔公开范围未定；仅 GM/server 追加，禁止普通 UPDATE/DELETE。 |
 | `prize_receivables` | 不可变 `race_result_id`、Horse、**Confirmed Entry Owner 快照**、`amount bigint`、`PENDING`/`RELEASED`/`CANCELLED`、Release/取消时间与原因。0 赏金也保留一条。 | 与每条 Race Result 一对一；同 Horse/Owner 可有多条历史应收。 | 基础表仅 GM 可读；PLAYER 只经无参数安全 RPC 读取自己的 `PENDING` 行；客户端不得写。 |
 | `prize_receivable_ledger_entries` | 每次初次释放、已释放金额差额或作废冲销的 append-only 账务事实；关联应收、已确认退役案、可空正式流水、操作者与原因。 | 一条首次 `RELEASE`/应收；非零条目唯一关联一笔 `financial_transactions`。 | 基础表仅 GM 可读；仅受控 server/RPC 追加。 |
 | `horse_retirement_requests` | Horse、申请时 Owner 快照、`OWNER_REQUEST`/`G1_LIMIT`/`WP_LIFESPAN`、`PENDING`/`CONFIRMED`/`REJECTED`/`WITHDRAWN`、PLAYER/GM 原因、审核与完成时间。 | 一 Horse 最多一个 PENDING 和一个 CONFIRMED 历史案。 | Owner 可读/提交自身 Horse 的案件；GM 可读全部；全部状态写入仅受控 RPC。 |
 
 `prize_receivables.amount` 等于 GM 已确认的 `race_results.prize_amount`，不由数据库公式计算。触发器从 `race_results → confirmed_race_entries` 派生 Horse 与 Owner，绝不从 `horses.owner_id` 动态取奖金归属。未释放的 `PENDING` 应收随真实 Prize 更正直接同步金额；退役或退役后补录赛果会成为 `RELEASED`，其更正与 VOID 只通过 `prize_receivable_ledger_entries` 和追加 `financial_transactions` 写差额/冲销，不能改写或重复释放历史流水。VOID 前未释放的应收直接成为 `CANCELLED`；重新 Record 使用新 UUID 形成新应收。
 
-冻结资金不是 `financial_transactions`。它应从当前有效秘密报价与当前公开拍卖最高有效报价计算，或保存在严格受控、可从报价重建的投影中。账户资金、可用资金、待释放奖金、总资产同样应动态计算，避免双写余额。正常 PLAYER 业务操作必须拒绝会使账户资金或可用资金为负的请求；金额使用 `bigint` 整数游戏资金单位。
+冻结资金不是 `financial_transactions`。它应从当前有效秘密报价与当前公开拍卖最高有效报价计算，或保存在严格受控、可从报价重建的投影中。账户资金、可用资金、待释放奖金、总资产同样应动态计算，避免双写余额。正常 PLAYER 业务操作必须拒绝会使账户资金或可用资金为负的请求；金额使用 `bigint` 整数游戏资金单位。GM 手工资金调整也必须走受控 RPC：锁定 Owner、使用相同冻结口径重新计算、追加不可变 `GM_MANUAL_ADJUSTMENT` 流水与 Audit，并拒绝使调整后账户资金或可用资金为负的请求；同一请求键只能产生一次流水。
 
 ### 3.7 审计
 

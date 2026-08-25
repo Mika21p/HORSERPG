@@ -59,7 +59,7 @@ export function formatFoalTradeSessionStatus(status: string) {
     SETTLED: "已结算",
   };
 
-  return labels[status] ?? status;
+  return labels[status] ?? "未知状态";
 }
 
 export function formatFoalTradeLotStatus(status: string) {
@@ -69,7 +69,36 @@ export function formatFoalTradeLotStatus(status: string) {
     UNSOLD: "未成交",
   };
 
-  return labels[status] ?? status;
+  return labels[status] ?? "未知状态";
+}
+
+export function formatFoalTradeInquiryStatus(status: string | null | undefined) {
+  const labels: Record<string, string> = {
+    REQUESTED: "等待回复",
+    ANSWERED: "已回复",
+  };
+
+  return status ? labels[status] ?? "未知状态" : "—";
+}
+
+export function formatSecretBidOfferStatus(status: string | null | undefined) {
+  const labels: Record<string, string> = {
+    ACTIVE: "有效",
+    WITHDRAWN: "已撤回",
+    WON: "已中标",
+    LOST: "未中标",
+  };
+
+  return status ? labels[status] ?? "未知状态" : "—";
+}
+
+export function formatFoalTradeSettlementStatus(status: string | null | undefined) {
+  const labels: Record<string, string> = {
+    SOLD: "已成交",
+    UNSOLD: "未成交",
+  };
+
+  return status ? labels[status] ?? "未知状态" : "—";
 }
 
 export function formatWpTime(
@@ -81,7 +110,7 @@ export function formatWpTime(
     return "—";
   }
 
-  return `WP ${year} 年 ${month} 月 Week ${week}`;
+  return `WP ${year} 年 ${month} 月第 ${week} 周`;
 }
 
 export function formatRaceKind(kind: string | null | undefined) {
@@ -92,7 +121,7 @@ export function formatRaceKind(kind: string | null | undefined) {
     OTHER: "其他比赛",
   };
 
-  return kind ? labels[kind] ?? kind : "—";
+  return kind ? labels[kind] ?? "其他比赛" : "—";
 }
 
 export function formatRaceGrade(grade: string | null | undefined) {
@@ -104,8 +133,27 @@ export function formatHorseName(horse: {
   foal_name?: string | null;
   horse_number?: number | string | null;
 } | null | undefined) {
-  if (!horse) return "Horse";
-  return horse.translated_name || horse.foal_name || (horse.horse_number ? `Horse #${horse.horse_number}` : "Horse");
+  if (!horse) return "马匹";
+  return horse.translated_name || horse.foal_name || (horse.horse_number ? `马匹 #${horse.horse_number}` : "马匹");
+}
+
+export function formatHorseSex(sex: string | null | undefined) {
+  const labels: Record<string, string> = {
+    MALE: "牡",
+    FEMALE: "牝",
+    GELDING: "阉",
+  };
+
+  return sex ? labels[sex] ?? "未知" : "—";
+}
+
+export function formatPedigreeFactorKind(kind: string | null | undefined) {
+  const labels: Record<string, string> = {
+    SIRE: "父系",
+    MARE: "母系",
+  };
+
+  return kind ? labels[kind] ?? "未知" : "—";
 }
 
 export function formatRaceResultStatus(status: string | null | undefined) {
@@ -114,7 +162,7 @@ export function formatRaceResultStatus(status: string | null | undefined) {
     VOIDED: "已作废",
   };
 
-  return status ? labels[status] ?? status : "—";
+  return status ? labels[status] ?? "未知状态" : "—";
 }
 
 export function formatRaceEntryRequestStatus(status: string | null | undefined) {
@@ -125,7 +173,7 @@ export function formatRaceEntryRequestStatus(status: string | null | undefined) 
     WITHDRAWN: "已撤回",
   };
 
-  return status ? labels[status] ?? status : "—";
+  return status ? labels[status] ?? "未知状态" : "—";
 }
 
 export function formatHorseLifeStage(stage: string | null | undefined) {
@@ -140,17 +188,17 @@ export function formatHorseLifeStage(stage: string | null | undefined) {
     DISCARDED: "已弃置",
   };
 
-  return stage ? labels[stage] ?? stage : "—";
+  return stage ? labels[stage] ?? "未知阶段" : "—";
 }
 
 export function formatHorseRetirementRequestKind(kind: string | null | undefined) {
   const labels: Record<string, string> = {
-    OWNER_REQUEST: "Owner 主动申请",
+    OWNER_REQUEST: "马主主动申请",
     G1_LIMIT: "G1 九胜退役",
     WP_LIFESPAN: "WP 寿命裁定",
   };
 
-  return kind ? labels[kind] ?? kind : "—";
+  return kind ? labels[kind] ?? "未知类型" : "—";
 }
 
 export function formatHorseRetirementRequestStatus(status: string | null | undefined) {
@@ -161,7 +209,7 @@ export function formatHorseRetirementRequestStatus(status: string | null | undef
     WITHDRAWN: "已撤回",
   };
 
-  return status ? labels[status] ?? status : "—";
+  return status ? labels[status] ?? "未知状态" : "—";
 }
 
 export function formatPrizeReceivableLedgerEntryKind(kind: string | null | undefined) {
@@ -171,7 +219,7 @@ export function formatPrizeReceivableLedgerEntryKind(kind: string | null | undef
     VOID_REVERSAL: "赛果作废冲回",
   };
 
-  return kind ? labels[kind] ?? kind : "—";
+  return kind ? labels[kind] ?? "未知类型" : "—";
 }
 
 export function formatInjuryStatus(status: string | null | undefined) {
@@ -182,7 +230,7 @@ export function formatInjuryStatus(status: string | null | undefined) {
     CANCELLED: "已取消",
   };
 
-  return status ? labels[status] ?? status : "—";
+  return status ? labels[status] ?? "未知状态" : "—";
 }
 
 export function formatHorseHealthEventType(eventType: string | null | undefined) {
@@ -191,7 +239,7 @@ export function formatHorseHealthEventType(eventType: string | null | undefined)
     MANUAL_ADJUSTMENT: "体力调整",
   };
 
-  return eventType ? labels[eventType] ?? eventType : "—";
+  return eventType ? labels[eventType] ?? "未知类型" : "—";
 }
 
 export function formatHorseHealthEventStatus(status: string | null | undefined) {
@@ -200,5 +248,5 @@ export function formatHorseHealthEventStatus(status: string | null | undefined) 
     VOIDED: "已作废",
   };
 
-  return status ? labels[status] ?? status : "—";
+  return status ? labels[status] ?? "未知状态" : "—";
 }

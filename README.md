@@ -25,6 +25,10 @@
 - `npm run lint`：运行代码风格与静态检查
 - `npm run build`：创建生产构建
 
+## 使用文档
+
+- [PLAYER 与 GM 简要使用指南](docs/USER_GUIDE.md)
+
 ## 身份与权限
 
 - 登录页：`/login`。第一版没有公开注册入口。

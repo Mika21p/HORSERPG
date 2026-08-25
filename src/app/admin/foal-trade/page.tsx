@@ -32,14 +32,14 @@ export default async function AdminFoalTradePage({ searchParams }: PageProps) {
   return (
     <main className="mx-auto grid w-full max-w-7xl gap-8 px-6 py-10 xl:grid-cols-[minmax(0,1fr)_25rem]">
       <section>
-        <p className="text-sm font-semibold tracking-[0.18em] text-amber-300">GM · AUGUST FOAL TRADE</p>
+        <p className="text-sm font-semibold tracking-[0.18em] text-amber-300">GM · 八月庭先交易</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">庭先取引管理</h1>
-        <p className="mt-3 max-w-2xl text-stone-400">这里的询问、秘密报价和推荐赢家属于 GM 内部信息。PLAYER 不会通过该页面或其网络响应获得这些记录。</p>
+        <p className="mt-3 max-w-2xl text-stone-400">这里的询问、秘密报价和推荐赢家属于 GM 内部信息。玩家不会通过该页面或其网络响应获得这些记录。</p>
         <Notice message={notice} />
         <div className="mt-6 overflow-hidden rounded-xl border border-stone-800">
           <table className="w-full text-left text-sm">
             <thead className="bg-stone-900 text-stone-400">
-              <tr><th className="px-4 py-3 font-medium">WP 年份</th><th className="px-4 py-3 font-medium">状态</th><th className="px-4 py-3 font-medium">现实时间（中国标准时间）</th><th className="px-4 py-3 font-medium">Lot / 已结算</th><th className="px-4 py-3" /></tr>
+              <tr><th className="px-4 py-3 font-medium">WP 年份</th><th className="px-4 py-3 font-medium">状态</th><th className="px-4 py-3 font-medium">现实时间（中国标准时间）</th><th className="px-4 py-3 font-medium">标的 / 已结算</th><th className="px-4 py-3" /></tr>
             </thead>
             <tbody className="divide-y divide-stone-800 bg-stone-950/50">
               {(sessions ?? []).map((session) => (

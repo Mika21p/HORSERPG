@@ -85,9 +85,9 @@ export default async function RetirementPage({ searchParams }: PageProps) {
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <section className="flex flex-col gap-5 border-b border-stone-800 pb-7 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm font-semibold tracking-[0.24em] text-amber-300">PLAYER · RETIREMENT</p>
+            <p className="text-sm font-semibold tracking-[0.24em] text-amber-300">玩家 · 退役管理</p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight">退役与待释放奖金</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-400">退役申请先进入 GM 审核。只有 GM 确认退役后，属于该 Horse 历史 Owner 的待释放奖金才会成为正式资金；它不等同于当前账户余额或可用资金。</p>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-400">退役申请先进入 GM 审核。只有 GM 确认退役后，属于该马匹历史马主 的待释放奖金才会成为正式资金；它不等同于当前账户余额或可用资金。</p>
           </div>
           <div className="rounded-xl border border-amber-300/30 bg-amber-300/5 px-5 py-4 text-sm">
             <p className="text-stone-500">我的待释放奖金</p>
@@ -103,7 +103,7 @@ export default async function RetirementPage({ searchParams }: PageProps) {
           <div className="flex items-end justify-between gap-4">
             <div>
               <h2 className="text-xl font-semibold text-amber-200">待释放奖金明细</h2>
-              <p className="mt-2 text-sm text-stone-400">只显示当前 PLAYER Owner 自己的 PENDING 奖金应收。已释放、纠错与作废历史不会在此处显示。</p>
+              <p className="mt-2 text-sm text-stone-400">只显示当前玩家马主 自己的 待释放奖金应收。已释放、纠错与作废历史不会在此处显示。</p>
             </div>
             <span className="font-mono text-sm text-stone-500">{prizes.length} 笔</span>
           </div>
@@ -133,7 +133,7 @@ export default async function RetirementPage({ searchParams }: PageProps) {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-amber-200">我的退役申请历史</h2>
-              <p className="mt-2 text-sm text-stone-400">你只能看到自己 Owner 的记录。PENDING 的 Owner 主动申请可在 GM 审核前撤回。</p>
+              <p className="mt-2 text-sm text-stone-400">你只能看到自己马主 的记录。待处理的马主主动申请可在 GM 审核前撤回。</p>
             </div>
             <p className="text-sm text-stone-500">当前 WP：{gameState ? formatWpTime(gameState.current_wp_year, gameState.current_wp_month, gameState.current_wp_week) : "尚未初始化"}</p>
           </div>
@@ -152,8 +152,8 @@ export default async function RetirementPage({ searchParams }: PageProps) {
                     <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${requestStatusClass(request.status)}`}>{formatHorseRetirementRequestStatus(request.status)}</span>
                   </div>
                   <div className="mt-5 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                    <div><p className="text-xs text-stone-500">当前 Horse 状态</p><p className="mt-1 text-stone-200">{formatHorseLifeStage(horse?.life_stage)}</p></div>
-                    <div><p className="text-xs text-stone-500">此 Horse 当前待释放奖金</p><p className="mt-1 font-mono text-amber-100">{formatGameMoney(sumMoney(prizeForHorse))}</p></div>
+                    <div><p className="text-xs text-stone-500">当前马匹状态</p><p className="mt-1 text-stone-200">{formatHorseLifeStage(horse?.life_stage)}</p></div>
+                    <div><p className="text-xs text-stone-500">此马当前待释放奖金</p><p className="mt-1 font-mono text-amber-100">{formatGameMoney(sumMoney(prizeForHorse))}</p></div>
                     <div><p className="text-xs text-stone-500">最后处理时间</p><p className="mt-1 text-stone-200">{formatDateTime(request.completed_at ?? request.withdrawn_at ?? request.reviewed_at)}</p></div>
                   </div>
                   {request.player_note && <p className="mt-4 rounded-lg border border-stone-800 bg-stone-950/60 p-3 text-sm leading-6 text-stone-400">你的备注：{request.player_note}</p>}
@@ -162,7 +162,7 @@ export default async function RetirementPage({ searchParams }: PageProps) {
                 </article>
               );
             })}
-            {!(requests ?? []).length && <p className="rounded-xl border border-stone-800 bg-stone-900 p-6 text-sm text-stone-500">尚未提交退役申请。可在自己 Horse 的详情页查看是否符合 Owner 主动申请条件。</p>}
+            {!(requests ?? []).length && <p className="rounded-xl border border-stone-800 bg-stone-900 p-6 text-sm text-stone-500">尚未提交退役申请。可在自己马匹的详情页查看是否符合 马主主动申请条件。</p>}
           </div>
         </section>
       </main>

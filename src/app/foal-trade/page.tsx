@@ -29,7 +29,7 @@ export default async function FoalTradeLobbyPage() {
           <div>
             <p className="text-sm font-semibold tracking-[0.18em] text-amber-300">AUGUST FOAL TRADE</p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight">庭先取引</h1>
-            <p className="mt-3 max-w-2xl text-stone-400">查看每届公开 Lot、最低报价与已经确认的最终成交结果。秘密报价与 GM 询问内容仅显示给其所属 PLAYER。</p>
+            <p className="mt-3 max-w-2xl text-stone-400">查看每届公开标的、最低报价与已经确认的最终成交结果。秘密报价与 GM 询问内容仅显示给所属玩家。</p>
           </div>
           {openSession && (
             <Link className="admin-button" href={`/foal-trade/${openSession.id}`}>
@@ -54,7 +54,7 @@ export default async function FoalTradeLobbyPage() {
                   <p className="text-sm font-semibold text-amber-200">WP {session.wp_year} 年庭先取引</p>
                   <p className="mt-2 text-sm text-stone-400">状态：{formatFoalTradeSessionStatus(session.status)}</p>
                 </div>
-                {session.status === "OPEN" && <span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-bold text-stone-950">OPEN</span>}
+                {session.status === "OPEN" && <span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-bold text-stone-950">开放中</span>}
               </div>
               <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
                 <div><dt className="text-stone-500">现实开始时间（中国标准时间）</dt><dd className="mt-1 text-stone-200">{formatDateTime(session.starts_at)}</dd></div>
